@@ -1,0 +1,22 @@
+{
+  "name": "Generic example (copy and adapt to your company standard)",
+  "units": "mm",
+  "layers": {
+    "OUTLINE":    { "color": 7, "linetype": "Continuous", "lineweight": 0.50, "plottable": true,  "description": "Main outlines" },
+    "CENTER":     { "color": 1, "linetype": "CENTER",     "lineweight": 0.18, "plottable": true,  "description": "Center lines and axes" },
+    "DIM":        { "color": 2, "linetype": "Continuous", "lineweight": 0.18, "plottable": true,  "description": "Dimensions" },
+    "TEXT":       { "color": 3, "linetype": "Continuous", "lineweight": 0.25, "plottable": true,  "description": "Texts and notes" },
+    "HATCH":      { "color": 8, "linetype": "Continuous", "lineweight": 0.13, "plottable": true,  "description": "Hatches" },
+    "HIDDEN":     { "color": 4, "linetype": "HIDDEN",     "lineweight": 0.25, "plottable": true,  "description": "Hidden lines" },
+    "TITLEBLOCK": { "color": 7, "linetype": "Continuous", "lineweight": 0.35, "plottable": true,  "description": "Title block and border" },
+    "CONSTRUCTION": { "color": 9, "linetype": "Continuous", "lineweight": 0.13, "plottable": false, "description": "Construction, not plotted" }
+  },
+  "only_listed_layers": false,
+  "text_styles": {
+    "STANDARD_TEXT": { "font_file": "romans.shx", "width_factor": 1.0 }
+  },
+  "required_blocks": [],
+  "title_block": null,
+  "forbid_entities_on_layer_0": true,
+  "forbid_color_override": false
+}

@@ -1,0 +1,43 @@
+[project]
+name = "acad-mcp"
+version = "0.2.0"
+description = "MCP server that lets Claude (and other MCP clients) drive a running AutoCAD on Windows via COM"
+readme = "README.md"
+requires-python = ">=3.13"
+license = "MIT"
+authors = [{ name = "thurdevv", email = "demonrspy@gmail.com" }]
+keywords = ["mcp", "autocad", "cad", "claude", "model-context-protocol", "dwg", "dxf"]
+classifiers = [
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering",
+]
+dependencies = [
+    "ezdxf>=1.4.5",
+    "mcp[cli]>=2.3.0",
+    "opencv-python-headless>=5.0.0.93",
+    "pillow>=13.0.0",
+    "pywin32>=312",
+]
+
+[project.urls]
+Homepage = "https://github.com/thurdevv/acad-mcp"
+Issues = "https://github.com/thurdevv/acad-mcp/issues"
+Changelog = "https://github.com/thurdevv/acad-mcp/blob/main/CHANGELOG.md"
+
+[project.scripts]
+acad-mcp = "acad_mcp:main"
+
+[build-system]
+requires = ["uv_build>=0.13.8,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]
+
+[tool.pytest.ini_options]
+markers = ["live: needs a running AutoCAD (window not minimized)"]
+testpaths = ["tests"]
+pythonpath = ["src"]
