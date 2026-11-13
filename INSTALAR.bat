@@ -71,7 +71,7 @@ echo.
 rem ---------- 6. Configurar o Claude ----------
 set "DRY="
 if "%ACAD_MCP_INSTALL_DRYRUN%"=="1" set "DRY=--dry-run"
-".venv\Scripts\python.exe" "scripts\instalar_no_claude.py" --lang %LANGSEL% %DRY%
+".venv\Scripts\python.exe" -m acad_mcp install-claude --lang %LANGSEL% --yes --no-reopen %DRY%
 if errorlevel 1 goto :fail
 echo.
 

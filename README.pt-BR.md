@@ -33,6 +33,16 @@ ler e conferir desenhos no AutoCAD aberto no seu PC Windows** — e processar pa
 Baixe `acad-mcp-<versão>.mcpb` na página de Releases e abra com o Claude Desktop (Configurações → Extensões).
 Opções: idioma (escolha `pt`), somente leitura, LISP ligado/desligado, restaurar janela.
 
+### Com o pip
+```bash
+pip install acad-mcp
+acad-mcp install-claude
+```
+O `pip install` só instala o programa (precisa de Python 3.13 ou mais novo). O segundo comando — ou simplesmente
+dar dois cliques no `acad-mcp.exe`, na pasta `Scripts` do seu Python — conecta ao Claude Desktop: pergunta o idioma,
+fecha o Claude (pedindo confirmação), grava a configuração com backup e reabre o Claude. Para desconectar:
+`acad-mcp uninstall-claude`.
+
 ### Claude Desktop — arquivo de configuração
 ```json
 {

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.1 — 2026-11-13
+
+- Connect to Claude Desktop without the repo: after `pip install acad-mcp`, double-click `acad-mcp.exe` (or run
+  `acad-mcp install-claude`). It checks the install, asks the language, closes Claude (after asking), writes the
+  config with a backup and reopens Claude. MCP clients still get the server (they start it through pipes).
+- `acad-mcp uninstall-claude` disconnects it the same way.
+- `INSTALAR.bat` uses the same code.
+- `--stdio` forces server mode from a console.
+
 ## 0.2.0 — 2026-11-13
 
 First public version.

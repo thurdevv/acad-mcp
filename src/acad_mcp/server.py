@@ -75,15 +75,42 @@ def build(cfg=None):
         name="acad",
         title="AutoCAD",
         instructions=INSTRUCTIONS_PT if LANG == "pt" else INSTRUCTIONS_EN,
-        version="0.2.0",
+        version="0.2.1",
     )
     worker = ComWorker(busy_timeout=cfg.busy_timeout, launch_if_missing=cfg.launch_if_missing)
     register_all(Ctx(mcp=mcp, cfg=cfg, worker=worker))
     return mcp
 
 
+def _setup_cli(action: str, argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(prog=f"acad-mcp {action}-claude",
+                                 description=f"{action.title()} acad-mcp in Claude Desktop.")
+    ap.add_argument("--lang", choices=["en", "pt"])
+    ap.add_argument("--yes", action="store_true", help="Do not ask (closes Claude if needed).")
+    ap.add_argument("--dry-run", action="store_true", help="Show what would change; write nothing.")
+    ap.add_argument("--no-reopen", action="store_true", help="Do not reopen Claude at the end.")
+    a = ap.parse_args(argv)
+    from .setup_claude import run
+
+    return run(action, lang=a.lang, assume_yes=a.yes, dry_run=a.dry_run, reopen=not a.no_reopen,
+               interactive=not a.yes)
+
+
 def main(argv: list[str] | None = None) -> None:
-    ap = argparse.ArgumentParser(prog="acad-mcp", description="MCP server to drive AutoCAD (Windows, COM).")
+    argv = sys.argv[1:] if argv is None else argv
+    if argv and argv[0] in ("install-claude", "uninstall-claude"):
+        sys.exit(_setup_cli(argv[0].split("-")[0], argv[1:]))
+    if not argv and sys.stdin is not None and sys.stdin.isatty():
+        # Opened by a person (double-click or typed in a terminal), not by an MCP client: an MCP client
+        # always talks through pipes. Offer to connect it to Claude instead of waiting silently.
+        from .setup_claude import run
+
+        sys.exit(run("install"))
+
+    ap = argparse.ArgumentParser(prog="acad-mcp", description=(
+        "MCP server to drive AutoCAD (Windows, COM). Run with no arguments in a console to connect it to "
+        "Claude Desktop; MCP clients start it through stdio."))
+    ap.add_argument("--stdio", action="store_true", help="Serve over stdio even when started from a console.")
     ap.add_argument("--http", action="store_true", help="Serve over Streamable HTTP instead of stdio.")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8765)

@@ -1,6 +1,6 @@
 [project]
 name = "acad-mcp"
-version = "0.2.0"
+version = "0.2.1"
 description = "MCP server that lets Claude (and other MCP clients) drive a running AutoCAD on Windows via COM"
 readme = "README.md"
 requires-python = ">=3.13"
