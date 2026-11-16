@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.3.0 — 2026-11-16
+
+Drafting features. 68 tools.
+
+- **Hatch with holes**: `draw_hatch(inner_boundary_handles=[...])`; the result has the net area, the outer
+  area and the number of holes.
+- **Dimension styles**: `manage_dim_style` (text height, arrow size, extension offsets, text gap, overall
+  scale, measurement factor, decimals, text style; `based_on` for a new style). `list_styles` now returns
+  the values of every dimension style. Written through the style record so that `undo` really reverts it.
+- **Sheets**: `list_layouts`, `manage_layout` (create, copy, rename, delete, activate, page setup with paper
+  by size such as `A3`, orientation, device, plot style, plot area and scale), `create_viewport` (scale and
+  the model point at its centre), `plot_layouts` (one PDF per sheet, never over an existing file without
+  `overwrite=true`, page size read back from the PDF).
+- Routine `plot_pdf`: new `layouts` argument (`all` or names with wildcards) for one PDF per sheet in batch,
+  also with the console engine. Routine `fill_title_block`: new `layout` argument.
+- `query_entities`, `quantities` and `block_report`: new `layout` filter.
+- **Dynamic blocks**: `get_entity` lists the dynamic properties with allowed values;
+  `set_dynamic_block_properties` changes them; `insert_block(dynamic_properties=...)`.
+- The compatibility test (`diagnostico --teste`) has 18 steps now (hatch with a hole, dimension style,
+  sheet + viewport + PDF).
+- Demo GIF re-recorded with hatched walls.
+- Not verified: same as before (only AutoCAD 2027 in English). Dynamic blocks were tested with AutoCAD's
+  sample blocks only; block properties of point type cannot be set.
+
 ## 0.2.3 — 2026-11-16
 
 Support release.

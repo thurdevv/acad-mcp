@@ -44,10 +44,10 @@ Space = Annotated[
 # ------------------------------------------------------------------ engine choice
 
 
-def use_fast(ctx: Ctx, app: Any, doc: Any, space: str) -> bool:
+def use_fast(ctx: Ctx, app: Any, doc: Any, space: str, layout: str | None = None) -> bool:
     if is_minimized(int(app.HWND)) and not ctx.cfg.auto_restore:
         return False
-    if (space or "model").startswith("model"):
+    if (space or "model").startswith("model") and not layout:
         return doc.ModelSpace.Count >= ctx.cfg.fast_threshold
     return True
 
@@ -62,16 +62,16 @@ def _light_com(e: Any) -> dict[str, Any]:
 
 def fetch(ctx: Ctx, app: Any, doc: Any, *, mode: str = "full", types=None, layers=None, space: str = "model",
           block_name=None, text_contains=None, color=None, within=None, within_mode: str = "crossing",
-          offset: int = 0, limit: int = 0) -> dict[str, Any]:
+          offset: int = 0, limit: int = 0, layout: str | None = None) -> dict[str, Any]:
     """Entities as dicts (same keys as entity_info). Returns total, page, engine and seconds."""
     t0 = time.monotonic()
     if block_name and not types:
         types = ["INSERT"]
     py_filter = bool(block_name or within)
     fallback_note = None
-    if use_fast(ctx, app, doc, space):
+    if use_fast(ctx, app, doc, space, layout):
         try:
-            flt = F.lisp_filter(types, layers, space, text_contains, color)
+            flt = F.lisp_filter(types, layers, space, text_contains, color, layout)
             if py_filter:
                 total, recs = F.query(app, doc, flt, mode)
                 if block_name:
@@ -88,7 +88,8 @@ def fetch(ctx: Ctx, app: Any, doc: Any, *, mode: str = "full", types=None, layer
             return {"total": total, "entities": page, "engine": "lisp", "seconds": round(time.monotonic() - t0, 2)}
         except AcadError as exc:
             fallback_note = str(exc)
-    ents = select(doc, types=types, layers=layers, space=space, text_contains=text_contains, color=color)
+    ents = select(doc, types=types, layers=layers, space=space, text_contains=text_contains, color=color,
+                  layout=layout)
     if block_name:
         ents = filter_block_name(ents, block_name)
     if within:
@@ -110,6 +111,49 @@ def _in_box(b: list | None, box: list, mode: str) -> bool:
     if mode == "inside":
         return lo[0] <= b[0][0] and lo[1] <= b[0][1] and b[1][0] <= hi[0] and b[1][1] <= hi[1]
     return not (b[1][0] < lo[0] or b[0][0] > hi[0] or b[1][1] < lo[1] or b[0][1] > hi[1])
+
+
+# Measured on AutoCAD 2027: the 340 (text style) that tblsearch / tblnext return is NOT the style's own, it
+# follows the current DIMTXSTY. The record read with entget (tblobjname ...) is right, but leaves some codes
+# out, so each value comes from entget when it is there and from tblnext otherwise.
+_DIM_LISP = (
+    '(progn (defun #g (c) (cdr (cond ((assoc c #e)) ((assoc c #s))))) '
+    '(setq #o "" #s (tblnext "DIMSTYLE" T)) (while #s '
+    '(setq #e (entget (tblobjname "DIMSTYLE" (cdr (assoc 2 #s)))) #o (strcat #o (cdr (assoc 2 #s))'
+    + "".join(f' "|" (rtos (#g {c}) 2 8)' for c in (140, 41, 42, 44, 147, 40, 144))
+    + ' "|" (itoa (#g 271)) "|" (if (assoc 340 #e) (cdr (assoc 2 (entget (cdr (assoc 340 #e))))) "")'
+    ' ";") #s (tblnext "DIMSTYLE"))) #o)'
+)
+_DIM_KEYS = ("text_height", "arrow_size", "extension_offset", "extension_beyond", "text_gap", "overall_scale",
+             "linear_factor")
+
+
+def read_dim_styles(app: Any, doc: Any, timeout: float) -> dict[str, dict[str, Any]]:
+    """Values stored in every dimension style, read in-process (the COM object exposes only the name)."""
+    from ..acad import commands as C
+
+    r = C.run_lisp(app, doc, _DIM_LISP, timeout)
+    if r.get("error"):
+        raise AcadError(str(r["error"]))
+    out: dict[str, dict[str, Any]] = {}
+    for rec in str(r.get("result") or "").strip('"').split(";"):
+        f = rec.split("|")
+        if len(f) < 10 or not f[0]:
+            continue
+        d: dict[str, Any] = {"name": f[0]}
+        for key, raw in zip(_DIM_KEYS, f[1:8]):
+            try:
+                d[key] = rnd(float(raw))
+            except ValueError:
+                pass
+        try:
+            d["decimals"] = int(f[8])
+        except ValueError:
+            pass
+        if f[9]:
+            d["text_style"] = f[9]
+        out[f[0].upper()] = d
+    return out
 
 
 # ------------------------------------------------------------------ tools
@@ -181,12 +225,14 @@ def register(ctx: Ctx) -> None:
         return ctx.doc(f)
 
     @ctx.tool(RO, title=t("List styles", "Listar estilos"), pt=(
-        "Lista estilos de texto (fonte, altura), estilos de cota e tipos de linha carregados."))
+        "Lista estilos de texto (fonte, altura), estilos de cota (com altura de texto, seta, escala, casas "
+        "decimais...) e tipos de linha carregados."))
     def list_styles(
         kind: Annotated[Literal["all", "text", "dimension", "linetype"],
                         Field(description=t("Which styles to list.", "Quais estilos listar."))] = "all",
     ) -> dict[str, Any]:
-        """Lists text styles (font, height), dimension styles and loaded linetypes."""
+        """Lists text styles (font, height), dimension styles (with text height, arrow size, scale, decimals...)
+        and loaded linetypes."""
 
         def f(app: Any, doc: Any) -> dict[str, Any]:
             out: dict[str, Any] = {}
@@ -198,8 +244,17 @@ def register(ctx: Ctx) -> None:
                 ]
                 out["current_text_style"] = doc.ActiveTextStyle.Name
             if kind in ("all", "dimension"):
-                out["dim_styles"] = [doc.DimStyles.Item(i).Name for i in range(doc.DimStyles.Count)]
+                names = [doc.DimStyles.Item(i).Name for i in range(doc.DimStyles.Count)]
                 out["current_dim_style"] = doc.ActiveDimStyle.Name
+                try:
+                    if is_minimized(int(app.HWND)) and not ctx.cfg.auto_restore:
+                        raise AcadError(t("AutoCAD window minimized", "janela do AutoCAD minimizada"))
+                    values = read_dim_styles(app, doc, ctx.cfg.command_timeout)
+                    out["dim_styles"] = [values.get(n.upper(), {"name": n}) for n in names]
+                except AcadError as exc:
+                    out["dim_styles"] = [{"name": n} for n in names]
+                    out["dim_styles_note"] = t("Only the names (values not read: {e}).",
+                                               "Só os nomes (valores não lidos: {e}).", e=str(exc)[:120])
             if kind in ("all", "linetype"):
                 out["linetypes"] = [{"name": lt.Name, "description": lt.Description}
                                     for lt in (doc.Linetypes.Item(i) for i in range(doc.Linetypes.Count))]
@@ -268,6 +323,9 @@ def register(ctx: Ctx) -> None:
             "'crossing' = touches the region; 'inside' = fully inside.",
             "'crossing' = toca a região; 'inside' = totalmente dentro."))] = "crossing",
         space: Space = "model",
+        layout: Annotated[str | None, Field(description=t(
+            "Only this layout (sheet), by name (wildcards allowed); replaces space. 'Model' = model space.",
+            "Só esta folha (layout), pelo nome (aceita curingas); substitui space. 'Model' = espaço modelo."))] = None,
         offset: Annotated[int, Field(ge=0, description=t("Skip the first N results (paging).",
                                                          "Pular os primeiros N resultados (paginação)."))] = 0,
         limit: Annotated[int, Field(ge=1, le=1000, description=t("Maximum results.", "Máximo de resultados."))] = 100,
@@ -281,7 +339,7 @@ def register(ctx: Ctx) -> None:
         def f(app: Any, doc: Any) -> dict[str, Any]:
             r = fetch(ctx, app, doc, mode="full", types=types, layers=layers, space=space, block_name=block_name,
                       text_contains=text_contains, color=color, within=within, within_mode=within_mode,
-                      offset=offset, limit=limit)
+                      offset=offset, limit=limit, layout=layout)
             page = r["entities"]
             if include_bbox:
                 for e in page:

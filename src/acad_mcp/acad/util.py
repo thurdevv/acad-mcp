@@ -387,6 +387,96 @@ def bbox(ent: Any) -> list[list[float]] | None:
         return None
 
 
+def _plain(v: Any) -> Any:
+    if isinstance(v, float):
+        return rnd(v)
+    if isinstance(v, (tuple, list)):
+        return [_plain(x) for x in v]
+    return v
+
+
+def dynamic_properties(br: Any) -> list[dict[str, Any]]:
+    """Properties of a dynamic block reference (the hidden read-only 'Origin' entries are left out)."""
+    out: list[dict[str, Any]] = []
+    for p in br.GetDynamicBlockProperties():
+        ro = bool(_g(p, "ReadOnly", False))
+        if ro and not _g(p, "Show", True):
+            continue
+        item: dict[str, Any] = {"name": p.PropertyName, "value": _plain(p.Value)}
+        try:
+            allowed = [_plain(a) for a in p.AllowedValues]
+        except Exception:  # noqa: BLE001
+            allowed = []
+        if allowed:
+            item["allowed_values"] = allowed
+        if ro:
+            item["read_only"] = True
+        desc = _g(p, "Description", "")
+        if desc:
+            item["description"] = desc
+        out.append(item)
+    return out
+
+
+def set_dynamic_properties(br: Any, values: dict[str, Any]) -> dict[str, Any]:
+    """Set dynamic block properties by name (case-insensitive). Returns the values read back.
+
+    Measured on AutoCAD 2027: a float property refuses a Python int, an integer (flip) property needs a 16-bit
+    integer, a text property silently ignores a value that is not in its list, and a number that is not in the
+    list snaps to the nearest allowed one. So values are converted to the property's own type and checked here.
+    """
+    if not _g(br, "IsDynamicBlock", False):
+        raise AcadError(t("That entity is not a dynamic block.", "Essa entidade não é um bloco dinâmico."))
+    props = {}
+    for p in br.GetDynamicBlockProperties():
+        if not (_g(p, "ReadOnly", False)):
+            props.setdefault(p.PropertyName.upper(), p)
+    unknown = sorted(k for k in values if k.upper() not in props)
+    if unknown:
+        raise AcadError(t("Unknown dynamic properties: {u}. This block has: {a}",
+                          "Propriedades dinâmicas inexistentes: {u}. Este bloco tem: {a}",
+                          u=unknown, a=sorted(p.PropertyName for p in props.values())))
+    out: dict[str, Any] = {}
+    for key, new in values.items():
+        p = props[key.upper()]
+        cur = p.Value
+        try:
+            allowed = list(p.AllowedValues)
+        except Exception:  # noqa: BLE001
+            allowed = []
+        try:
+            if isinstance(cur, str):
+                val: Any = str(new)
+                match = next((a for a in allowed if str(a).upper() == val.upper()), None)
+                if allowed and match is None:
+                    raise AcadError(t("'{n}' must be one of {a}.", "'{n}' precisa ser um destes: {a}.",
+                                      n=p.PropertyName, a=allowed))
+                p.Value = match if match is not None else val
+            elif isinstance(cur, bool) or isinstance(cur, int):
+                iv = int(float(new))
+                if allowed and iv not in [int(a) for a in allowed]:
+                    raise AcadError(t("'{n}' must be one of {a}.", "'{n}' precisa ser um destes: {a}.",
+                                      n=p.PropertyName, a=allowed))
+                try:
+                    p.Value = VARIANT(pythoncom.VT_I2, iv)
+                except pywintypes.com_error:
+                    p.Value = VARIANT(pythoncom.VT_I4, iv)
+            elif isinstance(cur, float):
+                p.Value = float(new)
+            else:
+                raise AcadError(t("'{n}' is a point property and cannot be set here.",
+                                  "'{n}' é uma propriedade de ponto e não pode ser alterada aqui.", n=p.PropertyName))
+        except (TypeError, ValueError):
+            raise AcadError(t("'{n}' needs a value like {c!r}, got {v!r}.",
+                              "'{n}' precisa de um valor como {c!r}; veio {v!r}.",
+                              n=p.PropertyName, c=cur, v=new)) from None
+        except pywintypes.com_error as exc:
+            raise AcadError(t("AutoCAD refused {v!r} for '{n}' ({e}).", "O AutoCAD recusou {v!r} em '{n}' ({e}).",
+                              v=new, n=p.PropertyName, e=exc.args[1])) from None
+        out[p.PropertyName] = _plain(p.Value)
+    return out
+
+
 def entity_info(ent: Any, detail: bool = False, with_bbox: bool = False) -> dict[str, Any]:
     on = _g(ent, "ObjectName", "?")
     d: dict[str, Any] = {
@@ -439,8 +529,12 @@ def entity_info(ent: Any, detail: bool = False, with_bbox: bool = False) -> dict
             d.update(name=_g(ent, "EffectiveName") or ent.Name, insertion=pt_out(ent.InsertionPoint),
                      rotation_deg=deg(ent.Rotation),
                      scale=[rnd(ent.XScaleFactor), rnd(ent.YScaleFactor), rnd(ent.ZScaleFactor)])
-            if _g(ent, "IsDynamicBlock", False) and ent.Name != d["name"]:
-                d["anonymous_name"] = ent.Name
+            if _g(ent, "IsDynamicBlock", False):
+                d["dynamic"] = True
+                if ent.Name != d["name"]:
+                    d["anonymous_name"] = ent.Name
+                if detail:
+                    d["dynamic_properties"] = dynamic_properties(ent)
             if _g(ent, "HasAttributes", False):
                 d["attributes"] = {a.TagString: a.TextString for a in ent.GetAttributes()}
         elif "Dimension" in on:
@@ -521,10 +615,11 @@ def select(
     space: str = "model",
     text_contains: str | None = None,
     color: int | None = None,
+    layout: str | None = None,
 ) -> list[Any]:
     """Select entities with AutoCAD's native filter (accepts * ? wildcards).
 
-    space: 'model', 'paper' (all layouts) or 'all'.
+    space: 'model', 'paper' (all layouts) or 'all'. layout: a layout (sheet) name, replaces space.
     """
     codes: list[int] = []
     data: list[Any] = []
@@ -536,7 +631,10 @@ def select(
         codes.append(8)
         data.append(",".join(layers))
     s = (space or "model").lower()
-    if s.startswith("model"):
+    if layout:
+        codes.append(410)
+        data.append(layout)
+    elif s.startswith("model"):
         codes.append(410)
         data.append("Model")
     elif s.startswith("paper") or s == "layout":

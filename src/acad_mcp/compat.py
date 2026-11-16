@@ -125,6 +125,42 @@ async def _run() -> list[dict[str, Any]]:
                 assert math.isclose(h["area"], math.pi * 2500, rel_tol=1e-6), h
                 return "hatch area ok"
 
+            async def s_hatch_hole():
+                b = await call(c, "draw_batch", layer="COMPAT", items=[
+                    {"type": "rectangle", "corner1": [2000, 0], "corner2": [2100, 100]},
+                    {"type": "circle", "center": [2050, 50], "radius": 20}])
+                h = await call(c, "draw_hatch", boundary_handles=[b["handles"][0]],
+                               inner_boundary_handles=[b["handles"][1]], pattern="ANSI31", scale=5)
+                assert math.isclose(h["area"], 10000 - math.pi * 400, rel_tol=1e-6), h
+                return "net area ok"
+
+            async def s_dimstyle():
+                r = await call(c, "manage_dim_style", name="COMPAT_DIM", text_height=4, decimals=1, make_current=True)
+                assert r["created"] and r.get("text_height") == 4.0 and r.get("decimals") == 1, r
+                d = await call(c, "draw_dimension", kind="aligned", p1=[0, -100], p2=[400, -100],
+                               text_position=[200, -150])
+                assert d["style"] == "COMPAT_DIM", d
+                r = await call(c, "manage_dim_style", name="COMPAT_DIM", text_height=6)
+                assert r.get("text_height") == 6.0, r
+                u = await call(c, "undo", steps=1)
+                ls = await call(c, "list_styles", kind="dimension")
+                now = {x["name"]: x for x in ls["dim_styles"]}["COMPAT_DIM"].get("text_height")
+                assert u["undone_steps"] == 1 and now == 4.0, (u, ls)
+                return "style created, used, changed and the change undone"
+
+            async def s_layout():
+                r = await call(c, "manage_layout", action="create", name="COMPAT_A3", paper="A3", plot_area="layout",
+                               plot_scale="1:1")
+                assert r["paper_size_mm"] == [420.0, 297.0], r
+                vp = await call(c, "create_viewport", layout="COMPAT_A3", center=[210, 148.5], width=380, height=260,
+                                scale="1:5", model_center=[200, 150])
+                assert math.isclose(vp["scale"], 0.2) and math.isclose(vp["model_center"][0], 200, abs_tol=0.01), vp
+                p = await call(c, "plot_layouts", layouts=["COMPAT_A3"], output_folder=os.path.join(tmp, "pdf"))
+                f = p["files"][0]
+                assert p["written"] == 1 and f.get("page_mm") == [420.0, 297.0], p
+                await call(c, "manage_layout", action="activate", name="Model")
+                return f"A3 sheet, viewport 1:5, PDF {f['bytes'] // 1024} KB with page {f['page_mm']} mm"
+
             async def s_undo():
                 n0 = (await call(c, "query_entities", limit=1))["total"]
                 await call(c, "draw_batch", items=[{"type": "line", "start": [0, 0], "end": [9, 9]}] * 3)
@@ -171,6 +207,9 @@ async def _run() -> list[dict[str, Any]]:
                 ("command line", s_command()),
                 ("command watchdog (ESC)", s_watchdog()),
                 ("hatch", s_hatch()),
+                ("hatch with a hole", s_hatch_hole()),
+                ("dimension style", s_dimstyle()),
+                ("layout, viewport and PDF", s_layout()),
                 ("undo", s_undo()),
                 ("screenshot with grid", s_image()),
                 ("import DXF", s_import()),

@@ -15,12 +15,15 @@ from ..acad.util import (
     _g,
     apply_props,
     by_handle,
+    closed_area,
+    dynamic_properties as dyn_props,
     entity_info,
     flat2d,
     flat3d,
     many_by_handle,
     objs,
     rad,
+    set_dynamic_properties,
     short_type,
     target_space,
     undo_group,
@@ -378,10 +381,19 @@ def register(ctx: Ctx) -> None:
 
         return draw(build, layer, color, space)
 
-    @ctx.tool(ADD, title=t("Hatch", "Hachurar"), pt="Hachura a área dentro de contornos fechados existentes (associativa).")
+    @ctx.tool(ADD, title=t("Hatch", "Hachurar"), pt=(
+        "Hachura a área dentro de contornos fechados existentes (associativa). Para deixar furos (pilar, shaft, "
+        "o miolo de uma parede), passe os contornos de dentro em inner_boundary_handles: a hachura não entra neles. "
+        "Devolve a área líquida."))
     def draw_hatch(
         boundary_handles: Annotated[list[str], Field(min_length=1, description=t(
-            "CLOSED boundaries (closed polylines, circles).", "Contornos FECHADOS (polilinhas fechadas, círculos)."))],
+            "CLOSED outer boundaries (closed polylines, circles).",
+            "Contornos externos FECHADOS (polilinhas fechadas, círculos)."))],
+        inner_boundary_handles: Annotated[list[str] | None, Field(description=t(
+            "CLOSED boundaries inside the outer one that must stay empty (holes). Each handle is one hole. A "
+            "boundary inside a hole is filled again (islands).",
+            "Contornos FECHADOS dentro do externo que devem ficar vazios (furos). Cada handle é um furo. Um contorno "
+            "dentro de um furo é preenchido de novo (ilhas)."))] = None,
         pattern: Annotated[str, Field(description=t(
             "Pattern: SOLID, ANSI31, ANSI37, AR-CONC, AR-SAND, NET, GRAVEL, EARTH...",
             "Padrão: SOLID, ANSI31, ANSI37, AR-CONC, AR-SAND, NET, GRAVEL, EARTH..."))] = "ANSI31",
@@ -389,13 +401,29 @@ def register(ctx: Ctx) -> None:
         angle_deg: float = 0.0,
         layer: Layer = None, color: Color = None, space: SpaceArg = "model",
     ) -> dict[str, Any]:
-        """Hatches the area inside existing closed boundaries (associative)."""
+        """Hatches the area inside existing closed boundaries (associative). To leave holes (a column, a shaft, the
+        inside of a wall), pass the inner boundaries in inner_boundary_handles: the hatch stays out of them.
+        Returns the net area."""
+        holes = list(inner_boundary_handles or [])
+        clash = sorted(set(h.upper() for h in holes) & set(h.upper() for h in boundary_handles))
+        if clash:
+            raise AcadError(t("Handles {c} are in both the outer and the inner list.",
+                              "Os handles {c} estão na lista externa e na interna ao mesmo tempo.", c=clash))
+        areas: dict[str, Any] = {}
 
         def build(d: Any, sp: Any) -> Any:
             loops = many_by_handle(d, boundary_handles)
+            inner = many_by_handle(d, holes) if holes else []
+            if inner:
+                outer_areas = [closed_area(e) for e in loops]
+                if len(loops) == 1 and outer_areas[0] is not None:
+                    areas["outer_area"] = round(outer_areas[0], 6)
+                areas["holes"] = len(inner)
             h = sp.AddHatch(1, pattern.upper(), True)
             try:
                 h.AppendOuterLoop(objs(loops))
+                for e in inner:
+                    h.AppendInnerLoop(objs([e]))
                 if pattern.upper() != "SOLID":
                     h.PatternScale = float(scale)
                     h.PatternAngle = rad(angle_deg)
@@ -409,7 +437,9 @@ def register(ctx: Ctx) -> None:
                     "existir em acad.pat. ({e})", e=exc.args[1])) from None
             return h
 
-        return draw(build, layer, color, space)
+        out = draw(build, layer, color, space)
+        out.update(areas)
+        return out
 
     @ctx.tool(ADD, title=t("Leader", "Chamada (leader)"), pt=(
         "Cria uma chamada (multileader) com seta apontando para o primeiro ponto e o texto no último."))
@@ -473,7 +503,9 @@ def register(ctx: Ctx) -> None:
 
         return draw(build, layer, None, space)
 
-    @ctx.tool(ADD, title=t("Insert block", "Inserir bloco"), pt="Insere um bloco (do desenho ou de um arquivo DWG) e preenche atributos.")
+    @ctx.tool(ADD, title=t("Insert block", "Inserir bloco"), pt=(
+        "Insere um bloco (do desenho ou de um arquivo DWG), preenche atributos e, em bloco dinâmico, ajusta as "
+        "propriedades dinâmicas (dynamic_properties)."))
     def insert_block(
         name: Annotated[str, Field(description=t("Name of a block in the drawing, or path of a .dwg to insert as a block.",
                                                  "Nome de um bloco do desenho, ou caminho de um .dwg para inserir como bloco."))],
@@ -482,9 +514,15 @@ def register(ctx: Ctx) -> None:
         rotation_deg: float = 0.0,
         attributes: Annotated[dict[str, str] | None, Field(description=t(
             "Attribute values by TAG, e.g. {'TAG': 'P-101'}.", "Valores de atributo por TAG, ex.: {'TAG': 'P-101'}."))] = None,
+        dynamic_properties: Annotated[dict[str, float | int | str] | None, Field(description=t(
+            "For dynamic blocks: property values by name, e.g. {'Door Size': 900, 'Opening Angle': 'Open 90º'}. "
+            "See the names and allowed values with get_entity on an inserted block.",
+            "Para blocos dinâmicos: valores por nome da propriedade, ex.: {'Door Size': 900, 'Opening Angle': "
+            "'Open 90º'}. Veja os nomes e valores permitidos com get_entity num bloco já inserido."))] = None,
         layer: Layer = None, color: Color = None, space: SpaceArg = "model",
     ) -> dict[str, Any]:
-        """Inserts a block (from the drawing or from a DWG file) and fills its attributes."""
+        """Inserts a block (from the drawing or from a DWG file), fills its attributes and, for dynamic blocks,
+        sets its dynamic properties."""
 
         def build(d: Any, sp: Any) -> Any:
             if name.lower().endswith(".dwg"):
@@ -510,9 +548,19 @@ def register(ctx: Ctx) -> None:
                     br.Delete()
                     raise AcadError(t("The block has no attributes {m}.", "O bloco não tem os atributos {m}.",
                                       m=sorted(missing)))
+            if dynamic_properties:
+                try:
+                    set_dynamic_properties(br, dynamic_properties)
+                except AcadError:
+                    br.Delete()
+                    raise
             return br
 
-        return draw(build, layer, color, space)
+        out = draw(build, layer, color, space)
+        if dynamic_properties:
+            out["dynamic_properties"] = ctx.doc(
+                lambda app, doc: dyn_props(by_handle(doc, out["handle"])))
+        return out
 
     @ctx.tool(EDIT, title=t("Create block", "Criar bloco"), pt=(
         "Cria uma definição de bloco a partir de entidades existentes (como o comando BLOCK)."))

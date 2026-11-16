@@ -19,6 +19,7 @@ from ..acad.util import (
     flat2d,
     many_by_handle,
     rad,
+    set_dynamic_properties,
     short_type,
     undo_group,
 )
@@ -315,6 +316,34 @@ def register(ctx: Ctx) -> None:
                     if a.TagString.upper() in wanted:
                         a.TextString = str(wanted[a.TagString.upper()])
             return entity_info(br)
+
+        return ctx.doc(f)
+
+    @ctx.tool(EDIT, title=t("Dynamic block properties", "Propriedades de bloco dinâmico"), pt=(
+        "Altera propriedades de um bloco dinâmico já inserido (largura de porta, lado da dobradiça, estado de "
+        "visibilidade...). Veja os nomes e valores permitidos com get_entity. Devolve os valores como ficaram: um "
+        "número fora da lista permitida é ajustado pelo AutoCAD para o mais próximo."))
+    def set_dynamic_block_properties(
+        handle: Annotated[str, Field(description=t("Block reference handle.", "Handle da referência de bloco."))],
+        values: Annotated[dict[str, float | int | str], Field(min_length=1, description=t(
+            "New values by property name, e.g. {'Door Size': 900, 'Hinge': 1, 'Opening Angle': 'Open 90º'}.",
+            "Novos valores por nome da propriedade, ex.: {'Door Size': 900, 'Hinge': 1, 'Opening Angle': "
+            "'Open 90º'}."))],
+    ) -> dict[str, Any]:
+        """Changes properties of an inserted dynamic block (door width, hinge side, visibility state...). See the
+        names and allowed values with get_entity. Returns the values as they ended up: a number outside the
+        allowed list is snapped by AutoCAD to the nearest one."""
+
+        def f(app: Any, doc: Any) -> dict[str, Any]:
+            br = by_handle(doc, handle)
+            if short_type(br.ObjectName) != "BlockReference":
+                raise AcadError(t("That entity is not a block.", "Essa entidade não é um bloco."))
+            _unlocked(doc, [br])
+            with undo_group(doc):
+                applied = set_dynamic_properties(br, values)
+            out = entity_info(br, detail=True)
+            out["applied"] = applied
+            return out
 
         return ctx.doc(f)
 

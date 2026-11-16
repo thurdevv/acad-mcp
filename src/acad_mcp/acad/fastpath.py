@@ -50,7 +50,7 @@ def ensure_loaded(app: Any, doc: Any, timeout: float) -> None:
 
 
 def lisp_filter(types: Sequence[str] | None = None, layers: Sequence[str] | None = None, space: str = "model",
-                text_contains: str | None = None, color: int | None = None) -> str:
+                text_contains: str | None = None, color: int | None = None, layout: str | None = None) -> str:
     parts: list[str] = []
     dt = dxf_types(types)
     if dt:
@@ -58,7 +58,9 @@ def lisp_filter(types: Sequence[str] | None = None, layers: Sequence[str] | None
     if layers:
         parts.append(f"(cons 8 {C.lisp_str(','.join(layers))})")
     s = (space or "model").lower()
-    if s.startswith("model"):
+    if layout:
+        parts.append(f"(cons 410 {C.lisp_str(layout)})")
+    elif s.startswith("model"):
         parts.append('(cons 410 "Model")')
     elif s.startswith("paper") or s == "layout":
         parts += ['(cons -4 "<NOT")', '(cons 410 "Model")', '(cons -4 "NOT>")']

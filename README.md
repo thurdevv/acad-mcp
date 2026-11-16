@@ -9,7 +9,7 @@ check drawings in the AutoCAD running on your Windows PC** — and process whole
 
 ![demo](docs/demo.gif)
 
-- **62 tools + a guided prompt**, every write is **one undo step** (Ctrl+Z).
+- **68 tools + a guided prompt**, every write is **one undo step** (Ctrl+Z).
 - **Fast on large drawings**: reads run as LISP inside AutoCAD — 50,000 entities in ~15 s (vs ~22 min over COM).
 - **Batch**: run a routine or a layer standard over a folder with AutoCAD's console engine (no window, in
   parallel). **Originals are never modified** — copies go to an output folder.
@@ -17,6 +17,8 @@ check drawings in the AutoCAD running on your Windows PC** — and process whole
   blocks, layer standard from CSV, purge/audit, plot PDF) that a person can also type as `MCP_...` commands.
 - **Recreate drawings**: import vector PDFs with real measurements, DXF/DWG, or trace scans/photos into lines;
   a coordinate grid on screenshots lets the model compare and fix.
+- **Sheets**: layouts with paper and plot scale, viewports at a given scale, one PDF per sheet (also in batch).
+- **Drafting details**: hatches with holes, dimension styles, dynamic block properties.
 - **English and Portuguese** (`ACAD_MCP_LANG=pt`).
 
 > AutoCAD is a registered trademark of Autodesk, Inc. This project is not affiliated with or endorsed by Autodesk.
@@ -83,6 +85,8 @@ Open AutoCAD and keep its window **not minimized** (it may stay behind other win
 - *"Check this drawing against the `example` standard and fix what you can."*
 - *"In C:\Projects\Sheets, replace 'REV A' with 'REV B' in every drawing."* (batch, originals untouched)
 - *"Recreate the attached part directly in AutoCAD with dimensions, then show me."*
+- *"Make an A3 sheet with the plan at 1:50, and give me one PDF per sheet."*
+- *"Hatch the walls (between the outer and the inner outline) and make the dimension text 3.5 high."*
 
 ## Tools
 
@@ -92,8 +96,9 @@ Open AutoCAD and keep its window **not minimized** (it may stay behind other win
 | Read | `drawing_info`, `list_layers`, `list_styles`, `list_blocks`, `query_entities`, `get_entity`, `get_selection` |
 | View | `get_view_image` (screenshot, optional coordinate grid), `zoom_view` |
 | Draw | `draw_line`, `draw_polyline`, `draw_rectangle`, `draw_circle`, `draw_arc`, `draw_text`, `draw_dimension`, `draw_hatch`, `draw_leader`, `draw_table`, `insert_block`, `create_block`, `draw_batch` |
-| Edit | `transform_entities`, `array_entities`, `offset_entity`, `erase_entities`, `set_entity_properties`, `edit_text`, `set_block_attributes`, `modify_geometry`, `explode_entities` |
-| Layers & styles | `manage_layer`, `manage_text_style`, `set_current`, `load_linetype` |
+| Edit | `transform_entities`, `array_entities`, `offset_entity`, `erase_entities`, `set_entity_properties`, `edit_text`, `set_block_attributes`, `set_dynamic_block_properties`, `modify_geometry`, `explode_entities` |
+| Layers & styles | `manage_layer`, `manage_text_style`, `manage_dim_style`, `set_current`, `load_linetype` |
+| Sheets | `list_layouts`, `manage_layout` (create, copy, rename, delete, page setup), `create_viewport`, `plot_layouts` (one PDF per sheet) |
 | Data | `quantities`, `block_report` (CSV) |
 | Standards | `list_standards`, `check_standards`, `apply_standards`, `purge_and_audit` |
 | Files & recreate | `import_file` (DXF, DWG, vector PDF, image), `list_received_files`, `trace_image` |
@@ -138,6 +143,19 @@ Prompt: `recreate_drawing` — measurements first, ask for what is missing, draw
 - **Batch console engine** (`accoreconsole.exe`): pure AutoLISP and `vlax-curve-*` work, **`vla-*` does not**;
   plotting to PDF and saving work. Measured: 3 files in ~1.5 s with 3 workers. Use `engine="gui"` for
   `vla-*` routines and JSON standards.
+- **Hatch with holes**: each inner boundary is one inner loop; a boundary inside a hole is filled again. The
+  result carries the net area (checked against outer area minus holes).
+- **Dimension styles**: the COM `CopyFrom` is not recorded for undo (U brought the variables back and left the
+  style changed), so values are written to the style record with `entmod`, which undoes correctly. Values come
+  from the record too: the text style that `tblsearch` reports follows the current variable, not the style.
+- **Sheets**: a new layout comes with the Windows default printer and no paper, so `manage_layout` with a
+  `paper` moves it to `DWG To PDF.pc3`. `plot_layouts` writes one file per sheet (AutoCAD wrote nothing when
+  two layouts went in one call), reports the page size read from the PDF, puts the current tab back and closes
+  the "Plot and Publish Job Complete" bubble its own plot caused (it would stay over the drawing and show up
+  in screenshots). A viewport's view centre can only be set from inside it, so the layout is activated.
+- **Dynamic blocks**: a number outside a property's list is snapped by AutoCAD to the nearest allowed value
+  (777 became 800) and a text outside the list is ignored without error, so texts and flip values are checked
+  first and the values read back are returned. Tested with AutoCAD's own sample blocks.
 - **PDF import**: `-PDFIMPORT` runs without a dialog. PDFs plotted by AutoCAD came back at real size; PDFs
   without CAD scale come in inches (1 pt = 1/72") — rescale and check one known measurement.
 - **trace_image** is a draft: straight strokes within ~1 % on clean drawings in tests; curves and text are not
@@ -154,10 +172,11 @@ console engine, each Claude config, a self-test and the latest errors from the l
 or contents**. Send that file when asking for help. Inside Claude, ask *"run the acad-mcp diagnostics"*
 (tool `server_diagnostics`).
 
-Add `--teste` (or `--test`) to also run a **compatibility test** in the open AutoCAD: 15 steps on a new drawing
-that is closed without saving (draw, read through LISP and COM, long LISP, command line, ESC watchdog, hatch,
-undo, screenshot, DXF import, console batch), each reported as passed or failed. This is how to check an AutoCAD
-version or language that was not tested here (only AutoCAD 2027 in English was).
+Add `--teste` (or `--test`) to also run a **compatibility test** in the open AutoCAD: 18 steps on a new drawing
+that is closed without saving (draw, read through LISP and COM, long LISP, command line, ESC watchdog, hatch with
+and without a hole, dimension style, sheet with viewport and PDF, undo, screenshot, DXF import, console batch),
+each reported as passed or failed. This is how to check an AutoCAD version or language that was not tested here
+(only AutoCAD 2027 in English was).
 
 **Operation log**: every tool call adds one line to `%LOCALAPPDATA%\acad-mcp\logs\acad-mcp-YYYY-MM.jsonl` on
 that PC (time, tool, duration, ok or error, PC and Windows user name). Arguments are summarized: numbers and

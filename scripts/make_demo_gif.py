@@ -82,10 +82,12 @@ async def main() -> None:
                        layer="DIM", text_height=220, arrow_size=160)
             await call("draw_dimension", kind="vertical", p1=[8000, 0], p2=[8000, 6000], text_position=[8900, 3000],
                        layer="DIM", text_height=220, arrow_size=160)
+            await call("draw_hatch", boundary_handles=[b["handles"][0]], inner_boundary_handles=[b["handles"][1]],
+                       pattern="ANSI31", scale=30, layer="WALL", color=8)  # the walls: outer outline minus the room
             await call("draw_hatch", boundary_handles=[furn["handles"][0]], pattern="ANSI37", scale=40,
                        layer="FURNITURE", color=8)
             await call("quantities", group_by="layer")
-            await shot('"Dimension it and hatch the bed"')
+            await shot('"Dimension it and hatch the walls and the bed"')
 
             await call("check_standards", standard_name="example")
             await shot('"Check it against the layer standard"  ->  1 call per step, 1 Ctrl+Z each')

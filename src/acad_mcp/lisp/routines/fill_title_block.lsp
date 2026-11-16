@@ -1,20 +1,22 @@
 ;;; name: fill_title_block
 ;;; desc-en: Set attribute values on every insert of a block (title blocks, stamps, tags).
 ;;; desc-pt: Preenche valores de atributos em todas as inserções de um bloco (carimbos, selos, tags).
-;;; args: block (name, wildcards ok), then one key per TAG to set, e.g. ("REV" . "B") ("DATE" . "2026-11-13")
+;;; args: block (name, wildcards ok), layout (optional: only inserts on this layout/sheet, wildcards ok),
+;;;       then one key per TAG to set, e.g. ("REV" . "B") ("DATE" . "2026-11-13")
 
-(defun mcp-r:fill_title_block (args / pat refs cnt ed)
-  (setq pat (mcp:arg args "block" nil) cnt 0)
+(defun mcp-r:fill_title_block (args / pat lay refs cnt ed)
+  (setq pat (mcp:arg args "block" nil) lay (mcp:arg args "layout" nil) cnt 0)
   (if (not pat) (progn (princ "\nblock is required") (exit)))
   (foreach e (mcp:inserts pat)
+   (if (or (not lay) (= lay "") (wcmatch (strcase (cdr (assoc 410 (entget e)))) (strcase lay)))
     (foreach a (mcp:attribs e)
       (foreach kv args
-        (if (and (/= (car kv) "block") (= (strcase (car kv)) (strcase (car a))))
+        (if (and (/= (car kv) "block") (/= (car kv) "layout") (= (strcase (car kv)) (strcase (car a))))
           (progn
             (setq ed (entget (cdr a)))
             (entmod (subst (cons 1 (cdr kv)) (assoc 1 ed) ed))
             (entupd (cdr a))
-            (setq cnt (1+ cnt)))))))
+            (setq cnt (1+ cnt))))))))
   (strcat "set " (itoa cnt) " attribute value(s)"))
 
 (defun c:MCP_FILL_TITLE (/ b tag val)

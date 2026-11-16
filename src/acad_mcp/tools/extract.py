@@ -89,6 +89,9 @@ def register(ctx: Ctx) -> None:
         within: Annotated[list[Pt] | None, Field(description=t("Only inside region [[x1,y1],[x2,y2]].",
                                                                "Só dentro da região [[x1,y1],[x2,y2]]."))] = None,
         space: Literal["model", "paper", "all"] = "model",
+        layout: Annotated[str | None, Field(description=t(
+            "Only this layout (sheet), by name (wildcards allowed); replaces space. 'Model' = model space.",
+            "Só esta folha (layout), pelo nome (aceita curingas); substitui space. 'Model' = espaço modelo."))] = None,
         csv_path: CsvPath = None,
         csv_format: CsvFormat = "auto",
     ) -> dict[str, Any]:
@@ -98,7 +101,7 @@ def register(ctx: Ctx) -> None:
 
         def f(app: Any, doc: Any) -> dict[str, Any]:
             r = fetch(ctx, app, doc, mode="full", types=types, layers=layers, space=space, block_name=block_name,
-                      within=within)
+                      within=within, layout=layout)
             groups: dict[str, dict[str, float]] = defaultdict(lambda: {"count": 0, "length": 0.0, "area": 0.0})
             for e in r["entities"]:
                 typ = e["type"]
@@ -152,6 +155,9 @@ def register(ctx: Ctx) -> None:
                                                               "Só estes blocos (curingas e vírgula). Vazio = todos."))] = None,
         layers: list[str] | None = None,
         space: Literal["model", "paper", "all"] = "all",
+        layout: Annotated[str | None, Field(description=t(
+            "Only this layout (sheet), by name (wildcards allowed); replaces space. 'Model' = model space.",
+            "Só esta folha (layout), pelo nome (aceita curingas); substitui space. 'Model' = espaço modelo."))] = None,
         limit: Annotated[int, Field(ge=1, le=50000)] = 2000,
         csv_path: CsvPath = None,
         csv_format: CsvFormat = "auto",
@@ -161,7 +167,7 @@ def register(ctx: Ctx) -> None:
 
         def f(app: Any, doc: Any) -> dict[str, Any]:
             r = fetch(ctx, app, doc, mode="full", types=["INSERT"], layers=layers, space=space,
-                      block_name=block_name or "*")
+                      block_name=block_name or "*", layout=layout)
             items = []
             tags_all: list[str] = []
             for e in r["entities"][:limit]:
