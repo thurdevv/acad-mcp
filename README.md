@@ -9,7 +9,7 @@ check drawings in the AutoCAD running on your Windows PC** — and process whole
 
 ![demo](docs/demo.gif)
 
-- **61 tools + a guided prompt**, every write is **one undo step** (Ctrl+Z).
+- **62 tools + a guided prompt**, every write is **one undo step** (Ctrl+Z).
 - **Fast on large drawings**: reads run as LISP inside AutoCAD — 50,000 entities in ~15 s (vs ~22 min over COM).
 - **Batch**: run a routine or a layer standard over a folder with AutoCAD's console engine (no window, in
   parallel). **Originals are never modified** — copies go to an output folder.
@@ -88,7 +88,7 @@ Open AutoCAD and keep its window **not minimized** (it may stay behind other win
 
 | Group | Tools |
 |---|---|
-| Document | `status`, `list_documents`, `new_drawing`, `open_drawing`, `activate_drawing`, `save_drawing`, `close_drawing` |
+| Document | `status`, `server_diagnostics`, `list_documents`, `new_drawing`, `open_drawing`, `activate_drawing`, `save_drawing`, `close_drawing` |
 | Read | `drawing_info`, `list_layers`, `list_styles`, `list_blocks`, `query_entities`, `get_entity`, `get_selection` |
 | View | `get_view_image` (screenshot, optional coordinate grid), `zoom_view` |
 | Draw | `draw_line`, `draw_polyline`, `draw_rectangle`, `draw_circle`, `draw_arc`, `draw_text`, `draw_dimension`, `draw_hatch`, `draw_leader`, `draw_table`, `insert_block`, `create_block`, `draw_batch` |
@@ -115,6 +115,10 @@ Prompt: `recreate_drawing` — measurements first, ask for what is missing, draw
 | `ACAD_MCP_FAST_THRESHOLD` | `300` | entity count above which reads use in-process LISP |
 | `ACAD_MCP_STANDARDS_DIR` | `Documents\AutoCAD MCP\standards` | your JSON standards |
 | `ACAD_MCP_ROUTINES_DIR` | `Documents\AutoCAD MCP\routines` | your saved routines |
+| `ACAD_MCP_UNDO_MARKER` | `1` | `0` = keep no undo counter in drawings (`undo` then reads English prompts) |
+| `ACAD_MCP_LOG` | `1` | `0` turns the operation log off |
+| `ACAD_MCP_LOG_ARGS` | `summary` | `none` = no arguments in the log, `full` = arguments as sent |
+| `ACAD_MCP_LOG_DIR` | `%LOCALAPPDATA%\acad-mcp\logs` | folder of the operation log |
 
 ## How it works (and what was measured)
 
@@ -126,7 +130,11 @@ Prompt: `recreate_drawing` — measurements first, ask for what is missing, draw
   SECURELOAD, unlike `(load)`).
 - With the window **minimized**, `SendCommand` gets queued and AutoCAD freezes when restored, so commands, LISP and
   screenshots refuse to run minimized (unless auto-restore is on). Direct drawing/editing works minimized.
-- COM selection sets leave internal "OLEAPPLICATION" undo records; `undo` skips them.
+- **Undo does not read AutoCAD's messages** (so it does not depend on AutoCAD's language): every write bumps a
+  counter stored in the drawing (dictionary `ACAD_MCP`, a few bytes) inside its own undo group, and `undo` sends
+  `U` until that counter drops. Reads leave internal undo records that are skipped this way; `run_lisp` and
+  `run_command` only count as a step when they changed the drawing. With nothing of the server left to undo,
+  `undo` sends nothing. `purge_and_audit(remove_server_marker=true)` removes the dictionary.
 - **Batch console engine** (`accoreconsole.exe`): pure AutoLISP and `vlax-curve-*` work, **`vla-*` does not**;
   plotting to PDF and saving work. Measured: 3 files in ~1.5 s with 3 workers. Use `engine="gui"` for
   `vla-*` routines and JSON standards.
@@ -134,6 +142,28 @@ Prompt: `recreate_drawing` — measurements first, ask for what is missing, draw
   without CAD scale come in inches (1 pt = 1/72") — rescale and check one known measurement.
 - **trace_image** is a draft: straight strokes within ~1 % on clean drawings in tests; curves and text are not
   traced.
+
+## Troubleshooting
+
+```bash
+py -m acad_mcp diagnostico
+```
+(`diagnose` also works.) It writes `acad-mcp-diagnostico-<PC>-<date>.txt` on the Desktop with: versions, whether
+Python's `Scripts` folder is on PATH, the AutoCAD found in the registry and whether it is open or minimized, the
+console engine, each Claude config, a self-test and the latest errors from the log. It lists **no drawing names
+or contents**. Send that file when asking for help. Inside Claude, ask *"run the acad-mcp diagnostics"*
+(tool `server_diagnostics`).
+
+Add `--teste` (or `--test`) to also run a **compatibility test** in the open AutoCAD: 15 steps on a new drawing
+that is closed without saving (draw, read through LISP and COM, long LISP, command line, ESC watchdog, hatch,
+undo, screenshot, DXF import, console batch), each reported as passed or failed. This is how to check an AutoCAD
+version or language that was not tested here (only AutoCAD 2027 in English was).
+
+**Operation log**: every tool call adds one line to `%LOCALAPPDATA%\acad-mcp\logs\acad-mcp-YYYY-MM.jsonl` on
+that PC (time, tool, duration, ok or error, PC and Windows user name). Arguments are summarized: numbers and
+texts up to 60 characters are kept as sent (so a short text you asked to draw does appear); longer texts, LISP
+code and file contents are stored only as a size. Nothing is sent anywhere. Files rotate at 5 MB (3 kept).
+`ACAD_MCP_LOG_ARGS=none` keeps arguments out, `ACAD_MCP_LOG=0` turns the log off.
 
 ## Safety
 

@@ -278,6 +278,56 @@ async def run_flow(call: Session, tmpdir: str, engine: str) -> None:
     await call.expect_error("save_drawing", "overwrite")
 
 
+@pytest.mark.parametrize("engine", ["lisp", "com"])
+def test_undo_counts_server_steps_without_reading_prompts(engine):
+    from acad_mcp.config import Config
+
+    async def body(call, tmp):
+        async def total():
+            return (await call("query_entities", limit=1))["total"]
+
+        # nothing done yet: undo must not touch the drawing
+        u = await call("undo", steps=3)
+        assert u["undone_steps"] == 0 and u["pending_steps"] == 0 and "u_commands_sent" not in u, u
+
+        await call("draw_line", start=[0, 0], end=[10, 0])                                   # step 1
+        await call("draw_batch", items=[{"type": "circle", "center": [0, 0], "radius": 5}] * 2)  # step 2
+        r = await call("run_lisp", code='(sslength (ssget "_X"))')                           # read-only: no step
+        assert r["result"] == "3" and r["changed"] is False, r
+        r = await call("run_lisp", code='(entmake (list (cons 0 "LINE") (cons 10 (list 0.0 0.0 0.0)) '
+                                        '(cons 11 (list 5.0 5.0 0.0)))) (command "_.CIRCLE" "9,9" "2") 1')  # step 3
+        assert r["changed"] is True, r
+        r = await call("run_command", command="_.CIRCLE 20,20 4")                            # step 4
+        assert r["changed"] is True, r
+        r = await call("run_command", command="_.REGEN")                                     # changes nothing
+        assert r["changed"] is False, r
+        await call("quantities")
+        await call("list_layers")
+        assert await total() == 6
+
+        u = await call("undo", steps=1)
+        assert u["undone_steps"] == 1 and u["pending_steps"] == 3 and await total() == 5, u
+        await call("query_entities")
+        u = await call("undo", steps=2)
+        assert u["undone_steps"] == 2 and u["pending_steps"] == 1 and await total() == 1, u
+        u = await call("undo", steps=5)  # more than there is: stops at the first server step
+        assert u["undone_steps"] == 1 and u["pending_steps"] == 0 and await total() == 0, u
+        u = await call("undo", steps=1)
+        assert u["undone_steps"] == 0 and "note" in u, u
+
+        # a clean file to deliver: the server's record can be removed on request
+        await call("draw_line", start=[0, 0], end=[1, 1])
+        r = await call("run_lisp", code='(if (dictsearch (namedobjdict) "ACAD_MCP") 1 0)')
+        assert r["result"] == "1" and r["changed"] is False
+        p = await call("purge_and_audit", purge=True, remove_server_marker=True)
+        assert p["server_marker_removed"] is True
+        r = await call("run_lisp", code='(if (dictsearch (namedobjdict) "ACAD_MCP") 1 0)')
+        assert r["result"] == "0", r
+        assert (await call("undo"))["undone_steps"] == 0
+
+    run_session(Config(command_timeout=5, fast_threshold=1 if engine == "lisp" else 10**9), body)
+
+
 def test_engines_agree():
     """LISP and COM must describe the same entities the same way."""
     from acad_mcp.config import Config

@@ -28,6 +28,7 @@ from pydantic import Field
 
 from ..acad import commands as C
 from ..acad.errors import AcadError
+from ..acad.util import without_undo_marker
 from ..i18n import t
 from .common import ADD, RO, Ctx
 from .routines import call_expr, routine_code
@@ -219,6 +220,10 @@ def _run_gui(ctx: Ctx, job: Job, pairs: list[tuple[Path, str]], code: str | None
         row: dict[str, Any] = {"file": rel}
 
         def one(app: Any) -> str:
+            with without_undo_marker():
+                return process(app)
+
+        def process(app: Any) -> str:
             doc = app.Documents.Open(str(copy))
             try:
                 if std is not None:

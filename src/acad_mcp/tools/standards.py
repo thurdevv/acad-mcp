@@ -13,7 +13,15 @@ from pydantic import Field
 
 from ..acad import commands as C
 from ..acad.errors import AcadError
-from ..acad.util import color_out, ensure_layer, parse_color, parse_lineweight, select, undo_group
+from ..acad.util import (
+    color_out,
+    ensure_layer,
+    parse_color,
+    parse_lineweight,
+    remove_undo_marker,
+    select,
+    undo_group,
+)
 from ..i18n import t
 from .common import EDIT, RO, Ctx
 from .layers import configure_layer
@@ -284,6 +292,12 @@ def register(ctx: Ctx) -> None:
                                                    "Remover layers, blocos, estilos e tipos de linha não usados."))] = True,
         audit: Annotated[bool, Field(description=t("Run AUDIT fixing errors (needs the window not minimized).",
                                                    "Rodar AUDIT corrigindo erros (requer janela não minimizada)."))] = False,
+        remove_server_marker: Annotated[bool, Field(description=t(
+            "Also delete the tiny ACAD_MCP record this server keeps in the drawing to count undo steps (for a "
+            "clean file to deliver). After that, the undo tool no longer goes back past this point.",
+            "Também apagar o pequeno registro ACAD_MCP que este servidor guarda no desenho para contar os passos "
+            "de desfazer (para entregar um arquivo limpo). Depois disso, a ferramenta undo não volta além deste "
+            "ponto."))] = False,
     ) -> dict[str, Any]:
         """Removes unused items (PURGE) and/or checks and fixes drawing integrity (AUDIT)."""
 
@@ -294,15 +308,19 @@ def register(ctx: Ctx) -> None:
         def f(app: Any, doc: Any) -> dict[str, Any]:
             before = counts(doc)
             out: dict[str, Any] = {"before": before}
-            if purge:
-                for _ in range(3):  # nested items only go away on later passes
-                    doc.PurgeAll()
-            if audit:
-                out["audit"] = C.send(app, doc, "_.AUDIT _Y\n", ctx.cfg.command_timeout)
-                try:
-                    out["audit"]["last_prompt"] = doc.GetVariable("LASTPROMPT")
-                except pywintypes.com_error:
-                    pass
+            with undo_group(doc) as step:
+                if purge:
+                    for _ in range(3):  # nested items only go away on later passes
+                        doc.PurgeAll()
+                if audit:
+                    out["audit"] = C.send(app, doc, "_.AUDIT _Y\n", ctx.cfg.command_timeout)
+                    try:
+                        out["audit"]["last_prompt"] = doc.GetVariable("LASTPROMPT")
+                    except pywintypes.com_error:
+                        pass
+                if remove_server_marker:
+                    step.count = False
+                    out["server_marker_removed"] = remove_undo_marker(doc)
             out["after"] = counts(doc)
             out["removed"] = {k: before[k] - out["after"][k] for k in before}
             return out

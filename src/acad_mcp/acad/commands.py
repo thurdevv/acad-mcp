@@ -190,7 +190,19 @@ def lisp_path(p: str) -> str:
     return lisp_str(str(p).replace("\\", "/"))
 
 
-INLINE_LIMIT = 600  # measured: the command line rejects expressions between 1,000 and 2,000 chars
+MAX_LINE = 950  # measured: the command line rejects expressions somewhere between 1,000 and 2,000 chars
+
+# Change detector: a database reactor that is alive only while the code runs. It tells apart LISP/commands that
+# modified the drawing (one counted undo step) from the ones that only read (measured on AutoCAD 2027).
+_TRACK_ON = ("(if #mcp-x (vlr-remove #mcp-x))(defun #mcp-b (r a)(setq #mcp-c T))"
+             "(setq #mcp-c nil #mcp-x (vlr-acdb-reactor nil (quote ((:vlr-objectAppended . #mcp-b)"
+             "(:vlr-objectModified . #mcp-b)(:vlr-objectErased . #mcp-b)))))")
+_TRACK_OFF = "(vlr-remove #mcp-x)(setq #mcp-x nil)"
+# Same idea for raw command lines, with its own names so run_lisp does not disturb it.
+_CMD_TRACK_ON = ("(progn (vl-load-com)(if #mcp-kx (vlr-remove #mcp-kx))(defun #mcp-kb (r a)(setq #mcp-kc T))"
+                 "(setq #mcp-kc nil #mcp-kx (vlr-acdb-reactor nil (quote ((:vlr-objectAppended . #mcp-kb)"
+                 "(:vlr-objectModified . #mcp-kb)(:vlr-objectErased . #mcp-kb)))))(princ))\n")
+_CMD_TRACK_OFF = "(progn (if #mcp-kx (vlr-remove #mcp-kx)) (setq #mcp-kx nil) (if #mcp-kc 1 0))"
 
 
 def strip_lisp_comments(code: str) -> str:
@@ -243,19 +255,39 @@ def eval_file_expr(path: str) -> str:
     )
 
 
-def _code_expr(code: str) -> tuple[str, str | None]:
-    """Short code goes inline; long code goes to a temp file read and evaluated by a small bootstrap."""
-    if len(code) <= INLINE_LIMIT:
-        return f"(progn {code})", None
+def _wrap(expr: str, res_path: str) -> str:
+    """The line sent to AutoCAD: run expr under the change detector, write 'C1'/'C0' and the result to a file."""
+    return (
+        "(progn (vl-load-com)" + _TRACK_ON
+        + f"(setq #mcp-r (vl-catch-all-apply (function (lambda () {expr}))))" + _TRACK_OFF
+        + f"(setq #mcp-f (open {lisp_path(res_path)} \"w\"))"
+        '(write-line (if #mcp-c "C1" "C0") #mcp-f)'
+        "(write-line (if (vl-catch-all-error-p #mcp-r)"
+        ' (strcat "ERR:" (vl-catch-all-error-message #mcp-r))'
+        " (vl-prin1-to-string #mcp-r)) #mcp-f)"
+        "(close #mcp-f)(setq #mcp-r nil #mcp-f nil)(princ))\n"
+    )
+
+
+def build_line(code: str, res_path: str) -> tuple[str, str | None]:
+    """(line to send, temp source file or None). Short one-line code goes inline; anything long or multi-line
+    goes to a temp file that a small bootstrap reads and evaluates (a line break or a ';' comment typed at the
+    command line would cut the expression)."""
+    clean = strip_lisp_comments(code).strip()
+    if "\n" not in clean and "\r" not in clean:
+        line = _wrap(f"(progn {clean})", res_path)
+        if len(line) <= MAX_LINE:
+            return line, None
     src = write_lisp_file(code)
-    return eval_file_expr(src), src
+    return _wrap(eval_file_expr(src), res_path), src
 
 
 def run_lisp(app: Any, doc: Any, code: str, timeout: float) -> dict[str, Any]:
+    """Evaluate AutoLISP. Returns result / error and 'changed' (did it modify the drawing database?)."""
     res_path = os.path.join(tempfile.gettempdir(), f"acad_mcp_{uuid.uuid4().hex}.txt")
-    expr, src_file = _code_expr(code)
+    line, src_file = build_line(code, res_path)
     try:
-        return _run_lisp(app, doc, expr, res_path, timeout)
+        return _run_lisp(app, doc, line, res_path, timeout)
     finally:
         if src_file:
             try:
@@ -264,17 +296,47 @@ def run_lisp(app: Any, doc: Any, code: str, timeout: float) -> dict[str, Any]:
                 pass
 
 
-def _run_lisp(app: Any, doc: Any, expr: str, res_path: str, timeout: float) -> dict[str, Any]:
-    wrapped = (
-        "(progn (vl-load-com)"
-        f"(setq #mcp-r (vl-catch-all-apply (function (lambda () {expr}))))"
-        f"(setq #mcp-f (open {lisp_path(res_path)} \"w\"))"
-        "(write-line (if (vl-catch-all-error-p #mcp-r)"
-        ' (strcat "ERR:" (vl-catch-all-error-message #mcp-r))'
-        " (vl-prin1-to-string #mcp-r)) #mcp-f)"
-        "(close #mcp-f) (setq #mcp-r nil #mcp-f nil) (princ))\n"
-    )
-    info = send(app, doc, wrapped, timeout)
+def run_lisp_step(app: Any, doc: Any, code: str, timeout: float) -> dict[str, Any]:
+    """run_lisp as ONE undo step, counted only when the code changed the drawing."""
+    from .util import bump_undo_counter
+
+    doc.StartUndoMark()
+    try:
+        info = run_lisp(app, doc, code, timeout)
+        if info.get("changed"):
+            bump_undo_counter(doc)
+        return info
+    finally:
+        try:
+            doc.EndUndoMark()
+        except pywintypes.com_error:
+            pass
+
+
+def run_command_step(app: Any, doc: Any, command: str, timeout: float) -> dict[str, Any]:
+    """run_command as ONE undo step, counted only when the command changed the drawing."""
+    from .util import UNDO_MARKER, bump_undo_counter
+
+    if not UNDO_MARKER:
+        return run_command(app, doc, command, timeout)
+    doc.StartUndoMark()
+    try:
+        send(app, doc, _CMD_TRACK_ON, min(timeout, 15))
+        info = run_command(app, doc, command, timeout)
+        flag = run_lisp(app, doc, _CMD_TRACK_OFF, min(timeout, 15))
+        info["changed"] = flag.get("result") == "1"
+        if info["changed"]:
+            bump_undo_counter(doc)
+        return info
+    finally:
+        try:
+            doc.EndUndoMark()
+        except pywintypes.com_error:
+            pass
+
+
+def _run_lisp(app: Any, doc: Any, line: str, res_path: str, timeout: float) -> dict[str, Any]:
+    info = send(app, doc, line, timeout)
     t0 = time.monotonic()
     while not os.path.exists(res_path) and time.monotonic() - t0 < 3:
         time.sleep(0.05)
@@ -294,6 +356,9 @@ def _run_lisp(app: Any, doc: Any, expr: str, res_path: str, timeout: float) -> d
             os.remove(res_path)
         except OSError:
             pass
+    flag, _, out = out.partition("\n")
+    info["changed"] = flag.strip() == "C1"
+    out = out.rstrip("\r\n")
     if out.startswith("ERR:"):
         info["error"] = out[4:]
         info["result"] = None

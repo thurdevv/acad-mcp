@@ -12,6 +12,10 @@ acad-mcp gives an AI model control over the AutoCAD running on your computer. Kn
   on copies only. Received files go to `Documents\AutoCAD MCP\received`.
 - **HTTP mode** (`--http`) listens on 127.0.0.1 and validates the Host header. Do **not** put it on a public URL
   without authentication in front of it: anyone who reaches it controls your AutoCAD.
+- **Operation log**: each tool call is recorded on the PC in `%LOCALAPPDATA%\acad-mcp\logs` (tool, duration,
+  error, PC and Windows user name, summarized arguments — short texts as sent; long texts, LISP code and file
+  contents only as a size). It is never sent anywhere. `ACAD_MCP_LOG_ARGS=none` or `ACAD_MCP_LOG=0` to reduce or
+  disable it.
 - **Trusted paths**: the server never changes AutoCAD's trusted paths or SECURELOAD. Loading the exported routines
   file in AutoCAD is a decision for the user.
 

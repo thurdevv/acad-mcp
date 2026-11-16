@@ -7,7 +7,7 @@ ler e conferir desenhos no AutoCAD aberto no seu PC Windows** — e processar pa
 
 ![demonstração](docs/demo.gif)
 
-- **61 ferramentas + um roteiro guiado**; cada alteração é **um Ctrl+Z**.
+- **62 ferramentas + um roteiro guiado**; cada alteração é **um Ctrl+Z**.
 - **Rápido em desenho grande**: a leitura roda como LISP dentro do AutoCAD — 50 mil entidades em ~15 s (contra
   ~22 min via COM).
 - **Lote**: roda uma rotina ou um padrão de layers numa pasta inteira pelo AutoCAD sem janela (accoreconsole), em
@@ -80,6 +80,33 @@ Abra o AutoCAD e deixe a janela **não minimizada** (pode ficar atrás de outras
 - *"Recrie a peça da imagem anexada direto no AutoCAD, com cotas, e me mostre."*
 
 A lista completa de ferramentas, configurações e detalhes técnicos está no [README em inglês](README.md).
+
+## Deu problema?
+
+```bash
+py -m acad_mcp diagnostico
+```
+Ele grava `acad-mcp-diagnostico-<PC>-<data>.txt` na Área de Trabalho com: versões, se a pasta `Scripts` do Python
+está no PATH, o AutoCAD achado no registro e se está aberto ou minimizado, o AutoCAD sem janela (accoreconsole),
+cada configuração do Claude, um autoteste e os últimos erros do log. **Não entra nome nem conteúdo de desenho.**
+Mande esse arquivo quando for pedir ajuda. Dentro do Claude, peça *"gera o diagnóstico do acad-mcp"*.
+
+Com `--teste` ele também roda um **teste de compatibilidade** no AutoCAD aberto: 15 passos num desenho novo, que
+é fechado sem salvar (desenhar, ler por LISP e por COM, LISP longo, linha de comando, cancelar com ESC, hachura,
+desfazer, imagem da tela, importar DXF, lote sem janela), cada um com PASSOU ou FALHOU. É o jeito de conferir uma
+versão ou um idioma do AutoCAD que não foi testado aqui (só o AutoCAD 2027 em inglês foi).
+
+**Registro de uso (log)**: cada pedido grava uma linha em `%LOCALAPPDATA%\acad-mcp\logs\acad-mcp-AAAA-MM.jsonl`,
+no próprio PC (data e hora, ferramenta, duração, se deu certo ou o erro, nome do PC e do usuário do Windows). Os
+parâmetros entram resumidos: números e textos de até 60 caracteres ficam como foram enviados (um texto curto que
+você mandou desenhar aparece); textos maiores, código LISP e conteúdo de arquivo ficam só como tamanho. Nada é
+enviado para fora do PC. O arquivo roda ao chegar em 5 MB (ficam 3). `ACAD_MCP_LOG_ARGS=none` tira os parâmetros;
+`ACAD_MCP_LOG=0` desliga o log; `ACAD_MCP_LOG_DIR` muda a pasta.
+
+**Desfazer**: o `undo` não lê mais as mensagens do AutoCAD, então não depende do idioma dele. Cada alteração soma
+um contador guardado no desenho (dicionário `ACAD_MCP`, alguns bytes) e o `undo` desfaz até o contador cair. Sem
+nada do assistente para desfazer, ele não desfaz nada. `purge_and_audit` com `remove_server_marker=true` remove
+esse dicionário; `ACAD_MCP_UNDO_MARKER=0` volta ao modo antigo (lê mensagens em inglês).
 
 ## Segurança
 

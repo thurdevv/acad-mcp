@@ -60,7 +60,8 @@ def build(cfg=None):
     """Build the MCPServer. Imports are local so --lang is applied before any tool text is created."""
     from mcp.server.mcpserver import MCPServer
 
-    from .acad import commands
+    from . import __version__
+    from .acad import commands, util
     from .acad.winutil import make_dpi_aware
     from .acad.worker import ComWorker
     from .config import Config
@@ -70,12 +71,13 @@ def build(cfg=None):
 
     cfg = cfg or Config.from_env()
     commands.AUTO_RESTORE = cfg.auto_restore
+    util.UNDO_MARKER = cfg.undo_marker
     make_dpi_aware()
     mcp = MCPServer(
         name="acad",
         title="AutoCAD",
         instructions=INSTRUCTIONS_PT if LANG == "pt" else INSTRUCTIONS_EN,
-        version="0.2.2",
+        version=__version__,
     )
     worker = ComWorker(busy_timeout=cfg.busy_timeout, launch_if_missing=cfg.launch_if_missing)
     register_all(Ctx(mcp=mcp, cfg=cfg, worker=worker))
@@ -100,6 +102,19 @@ def main(argv: list[str] | None = None) -> None:
     argv = sys.argv[1:] if argv is None else argv
     if argv and argv[0] in ("install-claude", "uninstall-claude"):
         sys.exit(_setup_cli(argv[0].split("-")[0], argv[1:]))
+    if argv and argv[0].lower() in ("diagnostico", "diagnóstico", "diagnose", "diagnostics"):
+        if "ACAD_MCP_LANG" not in os.environ:  # a person is reading this: follow the Windows language
+            from .setup_claude import ui_is_portuguese
+
+            os.environ["ACAD_MCP_LANG"] = "pt" if ui_is_portuguese() else "en"
+        from .diagnose import main as diagnose_main
+
+        sys.exit(diagnose_main(argv[1:]))
+    if argv and argv[0] in ("--version", "-V"):
+        from . import __version__
+
+        print(f"acad-mcp {__version__}")
+        sys.exit(0)
     if not argv and sys.stdin is not None and sys.stdin.isatty():
         # Opened by a person (double-click or typed in a terminal), not by an MCP client: an MCP client
         # always talks through pipes. Offer to connect it to Claude instead of waiting silently.

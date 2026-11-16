@@ -105,12 +105,111 @@ def many_by_handle(doc: Any, handles: Sequence[str]) -> list[Any]:
     return [by_handle(doc, h) for h in handles]
 
 
+# ------------------------------------------------------------------ undo steps
+#
+# Every write made through the server is ONE undo group and bumps a counter stored in the drawing (an XRecord
+# in the named dictionary ACAD_MCP), INSIDE that group. Measured on AutoCAD 2027: undoing the group rolls the
+# counter back with it, and internal records left by read-only queries do not touch it. So `undo` can send U
+# until the counter drops, without reading AutoCAD's (localized) prompts.
+
+UNDO_MARKER = True  # set by server.build() from Config (ACAD_MCP_UNDO_MARKER=0 turns it off)
+MARKER_DICT = "ACAD_MCP"
+MARKER_KEY = "undo"
+
+
+def open_token(doc: Any) -> str:
+    """Identifies THIS opening of the document: the undo stack does not survive closing, the saved counter does."""
+    try:
+        return f"{doc.Application.HWND}:{doc.HWND}:{doc.ModelSpace.ObjectID}"
+    except Exception:  # noqa: BLE001
+        return "?"
+
+
+def read_undo_marker(doc: Any) -> tuple[int, str]:
+    """(counter, token) stored in the drawing; (0, '') when there is none."""
+    try:
+        _, values = doc.Dictionaries.Item(MARKER_DICT).Item(MARKER_KEY).GetXRecordData()
+        return int(values[0]), str(values[1]) if len(values) > 1 else ""
+    except Exception:  # noqa: BLE001
+        return 0, ""
+
+
+def pending_undo_steps(doc: Any) -> int:
+    """How many server write steps are still in this document's undo stack."""
+    count, token = read_undo_marker(doc)
+    return count if count > 0 and token == open_token(doc) else 0
+
+
+def bump_undo_counter(doc: Any) -> None:
+    """Call inside an open undo group. Never raises: a marker problem must not break the tool."""
+    if not UNDO_MARKER:
+        return
+    try:
+        token = open_token(doc)
+        count, stored = read_undo_marker(doc)
+        count = count + 1 if stored == token else 1
+        dicts = doc.Dictionaries
+        try:
+            d = dicts.Item(MARKER_DICT)
+        except pywintypes.com_error:
+            d = dicts.Add(MARKER_DICT)
+        try:
+            xr = d.Item(MARKER_KEY)
+        except pywintypes.com_error:
+            xr = d.AddXRecord(MARKER_KEY)
+        xr.SetXRecordData(VARIANT(pythoncom.VT_ARRAY | pythoncom.VT_I2, (90, 1)),
+                          VARIANT(pythoncom.VT_ARRAY | pythoncom.VT_VARIANT, (int(count), token)))
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def remove_undo_marker(doc: Any) -> bool:
+    """Delete the counter (and the dictionary if it becomes empty). Returns True if something was removed."""
+    try:
+        d = doc.Dictionaries.Item(MARKER_DICT)
+    except pywintypes.com_error:
+        return False
+    removed = False
+    try:
+        d.Item(MARKER_KEY).Delete()
+        removed = True
+    except pywintypes.com_error:
+        pass
+    try:
+        if d.Count == 0:
+            d.Delete()
+            removed = True
+    except pywintypes.com_error:
+        pass
+    return removed
+
+
 @contextmanager
-def undo_group(doc: Any) -> Iterator[None]:
-    """Everything inside becomes a single undo step (one Ctrl+Z)."""
-    doc.StartUndoMark()
+def without_undo_marker() -> Iterator[None]:
+    """For work on other people's files (batch): group the changes but leave no counter in the drawing."""
+    global UNDO_MARKER
+    old, UNDO_MARKER = UNDO_MARKER, False
     try:
         yield
+    finally:
+        UNDO_MARKER = old
+
+
+class UndoStep:
+    """Yielded by undo_group; set .count = False when the group turned out to change nothing."""
+
+    count = True
+
+
+@contextmanager
+def undo_group(doc: Any) -> Iterator[UndoStep]:
+    """Everything inside becomes a single undo step (one Ctrl+Z), counted when it completes."""
+    step = UndoStep()
+    doc.StartUndoMark()
+    try:
+        yield step
+        if step.count:
+            bump_undo_counter(doc)
     finally:
         try:
             doc.EndUndoMark()

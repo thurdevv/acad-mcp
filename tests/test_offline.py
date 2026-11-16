@@ -125,13 +125,20 @@ def test_english_default_and_portuguese_option():
 
 
 def test_long_lisp_goes_through_file_and_comments_are_stripped():
-    from acad_mcp.acad.commands import INLINE_LIMIT, _code_expr, strip_lisp_comments
+    import os
+
+    from acad_mcp.acad.commands import MAX_LINE, build_line, strip_lisp_comments
 
     assert strip_lisp_comments('(a "x;y") ; c\n(b) ;| blk |; (c)') == '(a "x;y") \n(b)  (c)'
-    expr, src = _code_expr("(+ 1 2)")
-    assert src is None and expr == "(progn (+ 1 2))"
-    expr, src = _code_expr("(setq a 1)" * (INLINE_LIMIT // 10 + 5))
-    try:
-        assert src and len(expr) < 400 and "read-line" in expr
-    finally:
-        __import__("os").remove(src)
+    res = os.path.join(os.environ.get("TEMP", "."), "r.txt")
+
+    line, src = build_line("(+ 1 2) ; trailing comment", res)  # short, one line: inline, comment removed
+    assert src is None and "(progn (+ 1 2))" in line and "trailing" not in line and len(line) <= MAX_LINE
+    assert "vlr-acdb-reactor" in line and '"C1"' in line  # runs under the change detector
+
+    for code in ("(setq a 1)" * 120, "(setq a 1)\n(setq b 2)"):  # long, or multi-line: through a file
+        line, src = build_line(code, res)
+        try:
+            assert src and len(line) <= MAX_LINE and "read-line" in line
+        finally:
+            os.remove(src)

@@ -208,7 +208,12 @@ def register(ctx: Ctx) -> None:
         To draw something new, prefer draw_batch. Received files go to Documents\\AutoCAD MCP\\received (never
         overwritten)."""
         path = receive(filename, content_text, content_base64, source_path)
-        check = validate(path)
+        try:
+            check = validate(path)
+        except AcadError:
+            if source_path is None:  # do not keep an invalid file we have just written
+                path.unlink(missing_ok=True)
+            raise
         ext = path.suffix.lower()
         out: dict[str, Any] = {"file": str(path), "check": check}
         if action == "save_only":
@@ -245,10 +250,11 @@ def register(ctx: Ctx) -> None:
                 p = str(path).replace("\\", "/")
                 x, y = insertion[0], insertion[1]
                 cmd = f'_.-PDFIMPORT\n_F\n"{p}"\n{page}\n{x},{y}\n{scale}\n{rotation_deg}\n'
-                info = C.run_command(app, target, cmd, ctx.cfg.command_timeout)
-                new = [ms.Item(i) for i in range(before, ms.Count)]
-                if layer and new:
-                    with undo_group(target):
+                with undo_group(target) as step:
+                    info = C.run_command(app, target, cmd, ctx.cfg.command_timeout)
+                    new = [ms.Item(i) for i in range(before, ms.Count)]
+                    step.count = bool(new)
+                    if layer:
                         for e in new:
                             apply_props(app, target, e, layer)
                 out.update(imported_entities=len(new), handles=[e.Handle for e in new[:200]],

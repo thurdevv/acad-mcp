@@ -21,6 +21,7 @@ import pythoncom
 import pywintypes
 import win32com.client
 
+from .. import oplog
 from ..i18n import t
 from .errors import AcadError
 from .msgfilter import MessageFilter
@@ -97,6 +98,7 @@ class ComWorker:
             app.Visible = True
         try:
             self.main_hwnd = int(app.HWND)
+            oplog.set_context(acad=str(app.Version))
         except Exception:  # noqa: BLE001
             pass
         return app

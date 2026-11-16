@@ -8,13 +8,35 @@ from pydantic import Field
 
 from ..acad import commands as C
 from ..acad.errors import AcadError
+from ..acad.util import pending_undo_steps, read_undo_marker
 from ..acad.winutil import cancel_everything, find_acad_main, is_minimized
 from ..i18n import t
 from .common import EDIT, Ctx
 
-# Records that do not change the drawing and must not count as undo steps (measured on 2027):
-# COM selection sets leave "OLEAPPLICATION"; the server's own LISP queries leave LISP-expression records.
-NOISE_MARKERS = ("OLEAPPLICATION", "#MCP-", "MCP:")
+# The undo tool counts steps with the marker kept in the drawing (acad/util.py), not by reading prompts.
+MAX_U = 400      # hard cap of U commands in one call
+MAX_IDLE = 80    # U commands in a row that undid no server step (query records, user's own actions)
+
+# Legacy mode (ACAD_MCP_UNDO_MARKER=0): records that do not change the drawing, recognized by English prompts.
+NOISE_MARKERS = ("OLEAPPLICATION",)
+
+
+def _undo_by_prompt(app: Any, doc: Any, steps: int, before: int) -> dict[str, Any]:
+    undone: list[str] = []
+    skipped = 0
+    for _ in range(steps + 200):
+        if len(undone) >= steps:
+            break
+        C.send(app, doc, "_.U\n", 30)
+        prompt = str(doc.GetVariable("LASTPROMPT") or "").strip()
+        if any(m in prompt.upper() for m in NOISE_MARKERS):
+            skipped += 1
+            continue
+        undone.append(prompt)
+        if "everything" in prompt.lower() or "nothing to undo" in prompt.lower():
+            break
+    return {"undone": undone, "internal_records_skipped": skipped, "mode": "prompt (English AutoCAD only)",
+            "modelspace_entities_before": before, "modelspace_entities_after": doc.ModelSpace.Count}
 
 
 def register(ctx: Ctx) -> None:
@@ -49,7 +71,7 @@ def register(ctx: Ctx) -> None:
                     raise AcadError(t("LISP expressions are disabled on this server.",
                                       "Expressões LISP estão desligadas neste servidor."))
                 C.check_lisp(command, cfg.blocked_lisp)
-            return C.run_command(app, doc, command, timeout_s or cfg.command_timeout)
+            return C.run_command_step(app, doc, command, timeout_s or cfg.command_timeout)
 
         return ctx.doc(f)
 
@@ -73,36 +95,51 @@ def register(ctx: Ctx) -> None:
 
         def f(app: Any, doc: Any) -> dict[str, Any]:
             C.check_lisp(code, cfg.blocked_lisp)
-            return C.run_lisp(app, doc, code, timeout_s or cfg.command_timeout)
+            return C.run_lisp_step(app, doc, code, timeout_s or cfg.command_timeout)
 
         return ctx.doc(f)
 
     @ctx.tool(EDIT, title=t("Undo", "Desfazer"), pt=(
-        "Desfaz as últimas ações no desenho ativo (como Ctrl+Z). Cada ferramenta de desenho/edição deste servidor "
-        "conta como 1 passo. Atenção: também desfaz ações que o usuário tenha feito depois."))
+        "Desfaz as últimas N alterações feitas POR ESTE SERVIDOR no desenho ativo (cada ferramenta de desenho/edição, "
+        "e cada run_lisp/run_command que mudou algo, é 1 passo). O que o usuário fez depois dessas alterações "
+        "também é desfeito. Se não houver nada deste servidor para desfazer, não faz nada."))
     def undo(
         steps: Annotated[int, Field(ge=1, le=50, description=t("How many steps to undo.", "Quantos passos desfazer."))] = 1,
     ) -> dict[str, Any]:
-        """Undoes the last actions in the active drawing (like Ctrl+Z). Each drawing/editing tool of this server is
-        one step. Note: it also undoes actions the user did afterwards."""
+        """Undoes the last N changes made THROUGH THIS SERVER in the active drawing (each drawing/editing tool, and
+        each run_lisp/run_command that changed something, is one step). Anything the user did after those changes
+        is undone too. If nothing from this server is left to undo, it does nothing."""
 
         def f(app: Any, doc: Any) -> dict[str, Any]:
+            from ..acad import util
+
             before = doc.ModelSpace.Count
-            undone: list[str] = []
-            skipped = 0
-            for _ in range(steps + 200):
-                if len(undone) >= steps:
-                    break
+            if not util.UNDO_MARKER:
+                return _undo_by_prompt(app, doc, steps, before)
+            pending = pending_undo_steps(doc)
+            if pending <= 0:
+                return {"undone_steps": 0, "pending_steps": 0, "note": t(
+                    "Nothing done through this server is left to undo in this drawing, so nothing was undone. "
+                    "(The user can still press Ctrl+Z in AutoCAD for their own actions.)",
+                    "Não há nada feito por este servidor para desfazer neste desenho; nada foi desfeito. "
+                    "(O usuário ainda pode usar Ctrl+Z no AutoCAD para as ações dele.)")}
+            target = max(pending - steps, 0)
+            current, sent, idle = pending, 0, 0
+            while current > target and sent < MAX_U and idle < MAX_IDLE:
                 C.send(app, doc, "_.U\n", cfg.command_timeout)
-                prompt = str(doc.GetVariable("LASTPROMPT") or "").strip()
-                if any(m in prompt.upper() for m in NOISE_MARKERS):
-                    skipped += 1
-                    continue
-                undone.append(prompt)
-                if "everything" in prompt.lower() or "nothing to undo" in prompt.lower():
-                    break
-            return {"undone": undone, "internal_records_skipped": skipped,
-                    "modelspace_entities_before": before, "modelspace_entities_after": doc.ModelSpace.Count}
+                sent += 1
+                now = read_undo_marker(doc)[0]
+                idle = 0 if now < current else idle + 1
+                current = min(current, now)
+            out: dict[str, Any] = {
+                "undone_steps": pending - current, "requested": steps, "pending_steps": current,
+                "u_commands_sent": sent,
+                "modelspace_entities_before": before, "modelspace_entities_after": doc.ModelSpace.Count,
+            }
+            if current > target:
+                out["note"] = t("Stopped before reaching the requested steps (undo history exhausted).",
+                                "Parei antes de chegar aos passos pedidos (histórico de desfazer esgotado).")
+            return out
 
         return ctx.doc(f)
 

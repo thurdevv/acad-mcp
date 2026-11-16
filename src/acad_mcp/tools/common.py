@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import functools
+import time
 from dataclasses import dataclass
 from typing import Annotated, Any, Callable, TypeVar
 
@@ -9,6 +11,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp_types import ToolAnnotations
 from pydantic import Field
 
+from .. import oplog
 from ..acad.util import active_doc
 from ..acad.worker import ComWorker
 from ..config import Config
@@ -78,8 +81,25 @@ class Ctx:
                 return fn
             desc = pt if (LANG == "pt" and pt) else None
             ann = annotations.model_copy(update={"title": title}) if title else annotations
-            self.mcp.add_tool(fn, name=name, title=title, description=desc, annotations=ann,
-                              structured_output=structured)
+            self.mcp.add_tool(logged(fn, name or fn.__name__), name=name, title=title, description=desc,
+                              annotations=ann, structured_output=structured)
             return fn
 
         return deco
+
+
+def logged(fn: Callable[..., Any], tool_name: str) -> Callable[..., Any]:
+    """Same function (same signature and docstring for the schema), plus one line in the operation log."""
+
+    @functools.wraps(fn)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        t0 = time.perf_counter()
+        try:
+            result = fn(*args, **kwargs)
+        except Exception as exc:
+            oplog.record(tool_name, kwargs, (time.perf_counter() - t0) * 1000, error=str(exc) or type(exc).__name__)
+            raise
+        oplog.record(tool_name, kwargs, (time.perf_counter() - t0) * 1000, result=result)
+        return result
+
+    return wrapper

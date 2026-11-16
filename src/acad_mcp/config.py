@@ -10,6 +10,8 @@ ACAD_MCP_BUSY_TIMEOUT=30      seconds to keep retrying while AutoCAD says "busy"
 ACAD_MCP_LAUNCH=1             start AutoCAD if it is not running
 ACAD_MCP_EXTRA_BLOCKED=A,B    extra commands to block in run_command
 ACAD_MCP_FAST_THRESHOLD=300   entity count above which queries use in-process LISP (much faster)
+ACAD_MCP_UNDO_MARKER=0        do not keep the undo-step counter in drawings (undo then reads English prompts)
+ACAD_MCP_LOG=0                no operation log   (ACAD_MCP_LOG_ARGS=none|summary|full, ACAD_MCP_LOG_DIR=folder)
 """
 
 from __future__ import annotations
@@ -45,6 +47,7 @@ class Config:
     allow_lisp: bool = True
     allow_commands: bool = True
     auto_restore: bool = False
+    undo_marker: bool = True
     command_timeout: float = 30.0
     busy_timeout: float = 30.0
     launch_if_missing: bool = False
@@ -59,6 +62,7 @@ class Config:
             allow_lisp=_flag("ACAD_MCP_ALLOW_LISP", True),
             allow_commands=_flag("ACAD_MCP_ALLOW_COMMANDS", True),
             auto_restore=_flag("ACAD_MCP_AUTO_RESTORE", False),
+            undo_marker=_flag("ACAD_MCP_UNDO_MARKER", True),
             command_timeout=float(os.environ.get("ACAD_MCP_COMMAND_TIMEOUT", "30")),
             busy_timeout=float(os.environ.get("ACAD_MCP_BUSY_TIMEOUT", "30")),
             launch_if_missing=_flag("ACAD_MCP_LAUNCH", False),

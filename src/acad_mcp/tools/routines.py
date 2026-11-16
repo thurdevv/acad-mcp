@@ -95,7 +95,7 @@ def register(ctx: Ctx) -> None:
         code = routine_code(name, cfg.blocked_lisp) + "\n" + call_expr(name, args)
 
         def f(app: Any, doc: Any) -> dict[str, Any]:
-            return C.run_lisp(app, doc, code, timeout_s or max(cfg.command_timeout, 120))
+            return C.run_lisp_step(app, doc, code, timeout_s or max(cfg.command_timeout, 120))
 
         return ctx.doc(f)
 

@@ -8,6 +8,7 @@ from typing import Annotated, Any
 
 from pydantic import Field
 
+from .. import __version__
 from ..acad.errors import AcadError
 from ..acad.util import active_doc
 from ..i18n import t
@@ -73,6 +74,7 @@ def register(ctx: Ctx) -> None:
                 d["warning"] = t("Window minimized: commands, LISP and images won't work until it is restored.",
                                  "Janela minimizada: comandos, LISP e imagens não funcionam até restaurar.")
             d["server"] = {
+                "version": __version__,
                 "read_only": ctx.cfg.read_only,
                 "run_lisp": ctx.cfg.allow_lisp and not ctx.cfg.read_only,
                 "run_command": ctx.cfg.allow_commands and not ctx.cfg.read_only,
@@ -81,6 +83,21 @@ def register(ctx: Ctx) -> None:
             return d
 
         return ctx.run(f)
+
+    @ctx.tool(RO, title=t("Server diagnostics", "Diagnóstico do servidor"), pt=(
+        "Relatório para descobrir por que algo não funciona: versões, instalação e PATH, AutoCAD encontrado e aberto, "
+        "configuração do Claude Desktop e os erros recentes do log deste PC. Não inclui nomes nem conteúdo de "
+        "desenhos. Para gravar o relatório num arquivo e rodar o teste de compatibilidade no AutoCAD, a pessoa roda "
+        "no terminal: py -m acad_mcp diagnostico --teste"))
+    def server_diagnostics() -> dict[str, Any]:
+        """Report to find out why something does not work: versions, install and PATH, AutoCAD found and running,
+        Claude Desktop configuration and the recent errors from this PC's operation log. No drawing names or
+        contents. To write the report to a file and run the compatibility test in AutoCAD, the person runs in a
+        terminal: py -m acad_mcp diagnostico --teste"""
+        from .. import diagnose
+
+        data = diagnose.collect(ctx.worker, selftest=False)
+        return {"summary": data["hints"], "report": diagnose.format_report(data)}
 
     @ctx.tool(RO, title=t("List open drawings", "Listar desenhos abertos"), pt=(
         "Lista os desenhos abertos no AutoCAD, qual está ativo e quais têm alterações não salvas."))

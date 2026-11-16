@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.2.3 — 2026-11-16
+
+Support release.
+
+- **`acad-mcp diagnostico`** (alias `diagnose`): writes a report on the Desktop (versions, PATH, AutoCAD in the
+  registry and its window state, console engine, Claude configs, self-test, latest errors). No drawing names or
+  contents. `--teste` also runs a 15-step compatibility test in AutoCAD on a new drawing closed without saving.
+  New read-only tool `server_diagnostics` (62 tools now); `status` reports the server version.
+- **Operation log** per PC in `%LOCALAPPDATA%\acad-mcp\logs` (JSON Lines, rotating): tool, duration, ok or
+  error, and summarized arguments (long texts, LISP code and file contents only as a size).
+  `ACAD_MCP_LOG=0`, `ACAD_MCP_LOG_ARGS=none|summary|full`, `ACAD_MCP_LOG_DIR`.
+- **`undo` no longer reads AutoCAD's prompts**, so it does not depend on AutoCAD's language: a counter stored in
+  the drawing (dictionary `ACAD_MCP`) is bumped inside every write's undo group. `run_lisp`/`run_command` are now
+  one undo step each and only count when they changed the drawing; `set_current`, `load_linetype`, PDF import
+  and `purge_and_audit` are counted steps too. With nothing of the server left to undo, `undo` does nothing.
+  `purge_and_audit(remove_server_marker=true)` removes the dictionary; `ACAD_MCP_UNDO_MARKER=0` restores the old
+  prompt-based undo.
+- A received file that fails validation is deleted instead of being left in the received folder.
+- Not verified: AutoCAD 2021–2026 and non-English AutoCAD (only AutoCAD 2027 in English was available). The
+  compatibility test is there for whoever has them.
+
 ## 0.2.2 — 2026-11-16
 
 - Works on **Python 3.10 to 3.14** (was 3.13+). The offline suite runs on every version in CI; the live AutoCAD

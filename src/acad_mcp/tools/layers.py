@@ -178,6 +178,10 @@ def register(ctx: Ctx) -> None:
         """Sets the current layer, text style, dimension style, text height, scales and units."""
 
         def f(app: Any, doc: Any) -> dict[str, Any]:
+            with undo_group(doc):
+                return apply_current(doc)
+
+        def apply_current(doc: Any) -> dict[str, Any]:
             done: dict[str, Any] = {}
             try:
                 if layer:
@@ -220,7 +224,8 @@ def register(ctx: Ctx) -> None:
         """Loads a linetype from acadiso.lin/acad.lin so it can be used."""
 
         def f(app: Any, doc: Any) -> dict[str, Any]:
-            ensure_linetype(doc, name)
+            with undo_group(doc):
+                ensure_linetype(doc, name)
             return {"loaded": name}
 
         return ctx.doc(f)
