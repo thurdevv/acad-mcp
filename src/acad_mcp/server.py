@@ -75,7 +75,7 @@ def build(cfg=None):
         name="acad",
         title="AutoCAD",
         instructions=INSTRUCTIONS_PT if LANG == "pt" else INSTRUCTIONS_EN,
-        version="0.2.1",
+        version="0.2.2",
     )
     worker = ComWorker(busy_timeout=cfg.busy_timeout, launch_if_missing=cfg.launch_if_missing)
     register_all(Ctx(mcp=mcp, cfg=cfg, worker=worker))

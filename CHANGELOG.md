@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.2 — 2026-11-16
+
+- Works on **Python 3.10 to 3.14** (was 3.13+). The offline suite runs on every version in CI; the live AutoCAD
+  suite is still run on 3.13 only.
+- Docs: install with `py -m pip install acad-mcp` and `py -m acad_mcp install-claude`, which works when Python's
+  `Scripts` folder is not on PATH.
+- Lighter install: the unused `mcp[cli]` extra is no longer required.
+
 ## 0.2.1 — 2026-11-13
 
 - Connect to Claude Desktop without the repo: after `pip install acad-mcp`, double-click `acad-mcp.exe` (or run

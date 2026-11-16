@@ -25,7 +25,8 @@ check drawings in the AutoCAD running on your Windows PC** — and process whole
 
 - **Windows** and the **full AutoCAD** (uses COM/ActiveX). **AutoCAD LT is not supported** (no COM, no console).
   Tested on **AutoCAD 2027**; earlier versions (2021+) are likely to work but are not verified.
-- [uv](https://docs.astral.sh/uv/) (it installs Python 3.13 for you).
+- **Python 3.10 or newer** for the pip install (tested on 3.10–3.14). The extension, `uvx` and `INSTALAR.bat`
+  bring their own Python through [uv](https://docs.astral.sh/uv/), so they need none installed.
 - Linux/macOS: not possible — AutoCAD's automation only exists on Windows.
 
 ## Install
@@ -36,12 +37,17 @@ Download `acad-mcp-<version>.mcpb` from the Releases page and open it with Claud
 
 ### With pip
 ```bash
-pip install acad-mcp
-acad-mcp install-claude
+py -m pip install acad-mcp
+py -m acad_mcp install-claude
 ```
-`pip install` only installs the program (needs Python 3.13+). The second command — or simply double-clicking
-`acad-mcp.exe` in your Python `Scripts` folder — connects it to Claude Desktop: it asks the language, closes Claude
-(after asking), writes the config with a backup and reopens Claude. To disconnect: `acad-mcp uninstall-claude`.
+Needs **Python 3.10 or newer**. The first command only installs the program; the second connects it to Claude
+Desktop: it asks the language, closes Claude (after asking), writes the config with a backup and reopens Claude.
+To disconnect: `py -m acad_mcp uninstall-claude`.
+
+Why `py -m ...`: it always uses the same Python for both steps and works even when Python's `Scripts` folder is
+not on your PATH (a plain `acad-mcp install-claude` then fails with "not recognized"). If you have no `py`
+launcher, use `python -m pip install acad-mcp` and `python -m acad_mcp install-claude`. Double-clicking
+`acad-mcp.exe` in your Python `Scripts` folder also opens the same assistant.
 
 ### Claude Desktop — config file
 ```json

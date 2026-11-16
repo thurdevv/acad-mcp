@@ -67,7 +67,7 @@ def manifest(version: str, tools: list[dict], prompts: list[dict]) -> dict:
                 },
             },
         },
-        "compatibility": {"platforms": ["win32"], "runtimes": {"python": ">=3.13"}},
+        "compatibility": {"platforms": ["win32"], "runtimes": {"python": ">=3.10"}},
         "user_config": {
             "language": {"type": "string", "title": "Language / Idioma (en | pt)",
                          "description": "Language of tool descriptions and messages.", "default": "en"},

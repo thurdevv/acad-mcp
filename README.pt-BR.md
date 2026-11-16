@@ -24,7 +24,8 @@ ler e conferir desenhos no AutoCAD aberto no seu PC Windows** — e processar pa
 
 - **Windows** e **AutoCAD completo** (usa COM/ActiveX). **AutoCAD LT não funciona** (não tem COM nem console).
   Testado no **AutoCAD 2027**; versões a partir de 2021 provavelmente funcionam, mas não foram verificadas.
-- [uv](https://docs.astral.sh/uv/) (ele instala o Python 3.13 sozinho).
+- **Python 3.10 ou mais novo** para instalar pelo pip (testado do 3.10 ao 3.14). A extensão, o `uvx` e o
+  `INSTALAR.bat` trazem o próprio Python pelo [uv](https://docs.astral.sh/uv/) e não precisam de nenhum instalado.
 - Linux/macOS: não é possível — a automação do AutoCAD só existe no Windows.
 
 ## Instalação
@@ -35,13 +36,17 @@ Opções: idioma (escolha `pt`), somente leitura, LISP ligado/desligado, restaur
 
 ### Com o pip
 ```bash
-pip install acad-mcp
-acad-mcp install-claude
+py -m pip install acad-mcp
+py -m acad_mcp install-claude
 ```
-O `pip install` só instala o programa (precisa de Python 3.13 ou mais novo). O segundo comando — ou simplesmente
-dar dois cliques no `acad-mcp.exe`, na pasta `Scripts` do seu Python — conecta ao Claude Desktop: pergunta o idioma,
-fecha o Claude (pedindo confirmação), grava a configuração com backup e reabre o Claude. Para desconectar:
-`acad-mcp uninstall-claude`.
+Precisa de **Python 3.10 ou mais novo**. O primeiro comando só instala o programa; o segundo conecta ao Claude
+Desktop: pergunta o idioma, fecha o Claude (pedindo confirmação), grava a configuração com backup e reabre o
+Claude. Para desconectar: `py -m acad_mcp uninstall-claude`.
+
+Por que `py -m ...`: ele usa sempre o mesmo Python nos dois passos e funciona mesmo quando a pasta `Scripts` do
+Python não está no PATH (nesse caso, o `acad-mcp install-claude` puro falha com "não é reconhecido"). Sem o
+atalho `py`, use `python -m pip install acad-mcp` e `python -m acad_mcp install-claude`. Dar dois cliques no
+`acad-mcp.exe`, na pasta `Scripts` do seu Python, abre o mesmo assistente.
 
 ### Claude Desktop — arquivo de configuração
 ```json

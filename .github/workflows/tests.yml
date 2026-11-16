@@ -8,9 +8,14 @@ jobs:
   offline:
     # AutoCAD is not available on CI runners: live tests skip themselves.
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-      - run: uv sync
-      - run: uv run pytest -m "not live" -q
+      - run: uv sync --python ${{ matrix.python }}
+      - run: uv run --python ${{ matrix.python }} pytest -m "not live" -q
       - run: uv build
+        if: matrix.python == '3.13'
