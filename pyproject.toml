@@ -1,6 +1,6 @@
 [project]
 name = "acad-mcp"
-version = "0.3.0"
+version = "0.4.0"
 description = "MCP server that lets Claude (and other MCP clients) drive a running AutoCAD on Windows via COM"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -23,6 +23,7 @@ dependencies = [
     "opencv-python-headless>=5.0.0.93",
     "pillow>=12.0",
     "pywin32>=312",
+    "shapely>=2.0",
 ]
 
 [project.urls]

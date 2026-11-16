@@ -161,6 +161,26 @@ async def _run() -> list[dict[str, Any]]:
                 await call(c, "manage_layout", action="activate", name="Model")
                 return f"A3 sheet, viewport 1:5, PDF {f['bytes'] // 1024} KB with page {f['page_mm']} mm"
 
+            async def s_walls():
+                w = await call(c, "draw_walls", layer="COMPAT_WALL", thickness=150, hatch="ANSI31", hatch_scale=20,
+                               axes=[[[3000, 0], [7000, 0], [7000, 3000], [3000, 3000], [3000, 0]],
+                                     [[5500, 0], [5500, 3000]]])
+                base = 14000 * 150 + 2850 * 150
+                assert math.isclose(w["area"], base) and len(w["outlines"]) == 3, w
+                d = await call(c, "add_opening", wall_id=w["wall_id"], kind="door", position=[4000, 0], width=900)
+                assert math.isclose(d["wall"]["area"], base - 900 * 150) and len(d["symbol"]) == 2, d
+                q = await call(c, "query_entities", types=["hatch"], layers=["COMPAT_WALL"])
+                assert math.isclose(sum(e["area"] for e in q["entities"]), base - 900 * 150, rel_tol=1e-6), q
+                return "room with a partition, junctions solved, door cut, hatch area ok"
+
+            async def s_pipe():
+                p = await call(c, "draw_pipe", path=[[3000, 5000], [4000, 5000], [4000, 5500]], diameter=100,
+                               mode="double", layer="COMPAT_PIPE")
+                o = await call(c, "get_entity", handle=p["outline"][0])
+                assert math.isclose(p["length"], 1200 + math.pi * 75, rel_tol=1e-6), p
+                assert o["closed"] and math.isclose(o["area"], p["length"] * 100, rel_tol=1e-5), o
+                return "double line with a bend, length and area ok"
+
             async def s_undo():
                 n0 = (await call(c, "query_entities", limit=1))["total"]
                 await call(c, "draw_batch", items=[{"type": "line", "start": [0, 0], "end": [9, 9]}] * 3)
@@ -210,6 +230,8 @@ async def _run() -> list[dict[str, Any]]:
                 ("hatch with a hole", s_hatch_hole()),
                 ("dimension style", s_dimstyle()),
                 ("layout, viewport and PDF", s_layout()),
+                ("walls with a door", s_walls()),
+                ("pipe in double line", s_pipe()),
                 ("undo", s_undo()),
                 ("screenshot with grid", s_image()),
                 ("import DXF", s_import()),

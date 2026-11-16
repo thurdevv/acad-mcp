@@ -560,7 +560,20 @@ def entity_info(ent: Any, detail: bool = False, with_bbox: bool = False) -> dict
         d["read_warning"] = str(exc)[:120]
     if with_bbox or detail:
         d["bbox"] = bbox(ent)
+    if detail:
+        tag = object_tag(ent)
+        if tag:
+            d["object"] = tag  # the wall / pipe (W1, P2...) this entity belongs to: see get_wall
     return d
+
+
+def object_tag(ent: Any) -> str | None:
+    """Id of the server object (wall, pipe) an entity was drawn for, from its extended data."""
+    try:
+        _, values = ent.GetXData(MARKER_DICT)
+        return str(values[1]) if values and len(values) > 1 else None
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def curve_length(ent: Any) -> float | None:

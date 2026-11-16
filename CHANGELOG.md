@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.4.0 — 2026-11-16
+
+Engineering objects. 72 tools. New dependency: `shapely`.
+
+- **`draw_walls`**: walls from axes and a thickness, with L, T and X junctions solved and free ends cut
+  square; `justification` (axis in the middle or on one face, e.g. a room given by its inner measurements);
+  optional hatch. Returns a `wall_id`, the length along the middle of the wall and the plan area.
+- **`add_opening`**: door (leaf open at 90° and its arc, hinge and swing side), window (frame and glass
+  line) or plain gap, centred on a point of the wall; the wall is redrawn with the cut, as one undo step.
+- **`get_wall`**: lists the walls and pipes drawn in the drawing, or the full definition of one.
+- **`draw_pipe`**: single line (axis) or double line (both walls as a closed outline plus the centre line),
+  bends with a radius; returns the length along the axis.
+- The definition of each wall and pipe is stored in the drawing (dictionary `ACAD_MCP`) and their entities
+  carry the id as extended data; `get_entity` shows it as `object`.
+- The compatibility test has 20 steps now.
+- Not in this version: pipe fittings and symbols, walls along an arc, openings across a corner. With
+  `justification` left/right, walls meeting at a point should be given as one continuous axis.
+
 ## 0.3.0 — 2026-11-16
 
 Drafting features. 68 tools.

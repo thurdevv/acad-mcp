@@ -7,7 +7,7 @@ ler e conferir desenhos no AutoCAD aberto no seu PC Windows** — e processar pa
 
 ![demonstração](docs/demo.gif)
 
-- **68 ferramentas + um roteiro guiado**; cada alteração é **um Ctrl+Z**.
+- **72 ferramentas + um roteiro guiado**; cada alteração é **um Ctrl+Z**.
 - **Rápido em desenho grande**: a leitura roda como LISP dentro do AutoCAD — 50 mil entidades em ~15 s (contra
   ~22 min via COM).
 - **Lote**: roda uma rotina ou um padrão de layers numa pasta inteira pelo AutoCAD sem janela (accoreconsole), em
@@ -18,6 +18,9 @@ ler e conferir desenhos no AutoCAD aberto no seu PC Windows** — e processar pa
   a grade de coordenadas na foto da tela deixa o modelo comparar e corrigir.
 - **Folhas (layouts)**: papel e escala de plotagem, viewport na escala pedida, um PDF por folha (também em lote).
 - **Detalhes de desenho**: hachura com furos, estilos de cota, propriedades de blocos dinâmicos.
+- **Paredes e tubulação**: paredes a partir dos eixos e da espessura, com os encontros resolvidos; portas e
+  janelas que recortam a parede; tubo unifilar ou bifilar com curvas. Não desenha conexões (tê, flange,
+  válvula) nem parede em arco.
 - **Português e inglês** (`ACAD_MCP_LANG=pt`).
 
 > AutoCAD é marca registrada da Autodesk, Inc. Este projeto não tem vínculo com a Autodesk nem é endossado por ela.
@@ -81,6 +84,9 @@ Abra o AutoCAD e deixe a janela **não minimizada** (pode ficar atrás de outras
 - *"Na pasta C:\Projetos\Folhas, troque 'REV A' por 'REV B' em todos os desenhos."* (lote, originais intactos)
 - *"Recrie a peça da imagem anexada direto no AutoCAD, com cotas, e me mostre."*
 - *"Monte uma folha A3 com a planta em 1:50 e gere um PDF por folha."*
+- *"Desenhe uma sala de 4 × 3 m com paredes de 15 cm, porta de 90 cm na parede de baixo e janela de 1,20 m na
+  da direita."*
+- *"Passe um tubo de 4 polegadas, bifilar, de A até B até C, com curvas de raio longo, e me diga o comprimento."*
 - *"Hachure as paredes (entre o contorno de fora e o de dentro) e deixe o texto das cotas com 3,5 de altura."*
 
 A lista completa de ferramentas, configurações e detalhes técnicos está no [README em inglês](README.md).
@@ -95,9 +101,9 @@ está no PATH, o AutoCAD achado no registro e se está aberto ou minimizado, o A
 cada configuração do Claude, um autoteste e os últimos erros do log. **Não entra nome nem conteúdo de desenho.**
 Mande esse arquivo quando for pedir ajuda. Dentro do Claude, peça *"gera o diagnóstico do acad-mcp"*.
 
-Com `--teste` ele também roda um **teste de compatibilidade** no AutoCAD aberto: 18 passos num desenho novo, que
+Com `--teste` ele também roda um **teste de compatibilidade** no AutoCAD aberto: 20 passos num desenho novo, que
 é fechado sem salvar (desenhar, ler por LISP e por COM, LISP longo, linha de comando, cancelar com ESC, hachura
-com e sem furo, estilo de cota, folha com viewport e PDF, desfazer, imagem da tela, importar DXF, lote sem
+com e sem furo, estilo de cota, folha com viewport e PDF, parede com porta, tubo, desfazer, imagem da tela, importar DXF, lote sem
 janela), cada um com PASSOU ou FALHOU. É o jeito de conferir uma versão ou um idioma do AutoCAD que não foi
 testado aqui (só o AutoCAD 2027 em inglês foi).
 

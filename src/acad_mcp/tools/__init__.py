@@ -6,6 +6,7 @@ from . import (
     documents,
     draw,
     edit,
+    engineering,
     extract,
     files,
     layers,
@@ -18,7 +19,7 @@ from . import (
 )
 from .common import Ctx
 
-MODULES = [documents, query, view, draw, edit, layers, layouts, extract, standards, files, recreate, routines, batch, advanced]
+MODULES = [documents, query, view, draw, edit, layers, layouts, engineering, extract, standards, files, recreate, routines, batch, advanced]
 
 
 def register_all(ctx: Ctx) -> None:

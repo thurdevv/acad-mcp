@@ -9,7 +9,7 @@ check drawings in the AutoCAD running on your Windows PC** — and process whole
 
 ![demo](docs/demo.gif)
 
-- **68 tools + a guided prompt**, every write is **one undo step** (Ctrl+Z).
+- **72 tools + a guided prompt**, every write is **one undo step** (Ctrl+Z).
 - **Fast on large drawings**: reads run as LISP inside AutoCAD — 50,000 entities in ~15 s (vs ~22 min over COM).
 - **Batch**: run a routine or a layer standard over a folder with AutoCAD's console engine (no window, in
   parallel). **Originals are never modified** — copies go to an output folder.
@@ -19,6 +19,8 @@ check drawings in the AutoCAD running on your Windows PC** — and process whole
   a coordinate grid on screenshots lets the model compare and fix.
 - **Sheets**: layouts with paper and plot scale, viewports at a given scale, one PDF per sheet (also in batch).
 - **Drafting details**: hatches with holes, dimension styles, dynamic block properties.
+- **Walls and pipes**: walls from axes and a thickness with the junctions solved, doors and windows that cut
+  them, pipes in single or double line with bends.
 - **English and Portuguese** (`ACAD_MCP_LANG=pt`).
 
 > AutoCAD is a registered trademark of Autodesk, Inc. This project is not affiliated with or endorsed by Autodesk.
@@ -86,6 +88,8 @@ Open AutoCAD and keep its window **not minimized** (it may stay behind other win
 - *"In C:\Projects\Sheets, replace 'REV A' with 'REV B' in every drawing."* (batch, originals untouched)
 - *"Recreate the attached part directly in AutoCAD with dimensions, then show me."*
 - *"Make an A3 sheet with the plan at 1:50, and give me one PDF per sheet."*
+- *"Draw a 4 × 3 m room with 15 cm walls, a 90 cm door on the bottom wall and a 1.20 m window on the right."*
+- *"Run a 4-inch pipe in double line from A to B to C with long-radius elbows and tell me its length."*
 - *"Hatch the walls (between the outer and the inner outline) and make the dimension text 3.5 high."*
 
 ## Tools
@@ -98,6 +102,7 @@ Open AutoCAD and keep its window **not minimized** (it may stay behind other win
 | Draw | `draw_line`, `draw_polyline`, `draw_rectangle`, `draw_circle`, `draw_arc`, `draw_text`, `draw_dimension`, `draw_hatch`, `draw_leader`, `draw_table`, `insert_block`, `create_block`, `draw_batch` |
 | Edit | `transform_entities`, `array_entities`, `offset_entity`, `erase_entities`, `set_entity_properties`, `edit_text`, `set_block_attributes`, `set_dynamic_block_properties`, `modify_geometry`, `explode_entities` |
 | Layers & styles | `manage_layer`, `manage_text_style`, `manage_dim_style`, `set_current`, `load_linetype` |
+| Walls & pipes | `draw_walls`, `add_opening` (door, window, gap), `get_wall`, `draw_pipe` (single or double line) |
 | Sheets | `list_layouts`, `manage_layout` (create, copy, rename, delete, page setup), `create_viewport`, `plot_layouts` (one PDF per sheet) |
 | Data | `quantities`, `block_report` (CSV) |
 | Standards | `list_standards`, `check_standards`, `apply_standards`, `purge_and_audit` |
@@ -156,6 +161,15 @@ Prompt: `recreate_drawing` — measurements first, ask for what is missing, draw
 - **Dynamic blocks**: a number outside a property's list is snapped by AutoCAD to the nearest allowed value
   (777 became 800) and a text outside the list is ignored without error, so texts and flip values are checked
   first and the values read back are returned. Tested with AutoCAD's own sample blocks.
+- **Walls**: every axis segment becomes a rectangle, every meeting point gets a mitred corner, and the pieces
+  are merged ([shapely](https://shapely.readthedocs.io)); an opening is a rectangle removed. Checked by hand
+  calculation: a 4 × 3 m room with a partition, 15 cm walls = 2.5275 m², minus 0.9 × 0.15 for a door, and the
+  hatch AutoCAD draws has that same area. A closed room is two outlines (outer and inner). The definition
+  (axes, thickness, openings) is kept in the drawing, which is how `add_opening` redraws the wall; the
+  entities carry the wall's id as extended data.
+- **Pipes**: bends are true arcs. For double line the two walls are concentric with the axis, so the outline
+  area equals length × diameter (checked in AutoCAD). **Not drawn**: fittings and symbols (tee, flange,
+  valve, reducer), walls along an arc, and openings across a corner.
 - **PDF import**: `-PDFIMPORT` runs without a dialog. PDFs plotted by AutoCAD came back at real size; PDFs
   without CAD scale come in inches (1 pt = 1/72") — rescale and check one known measurement.
 - **trace_image** is a draft: straight strokes within ~1 % on clean drawings in tests; curves and text are not
@@ -172,9 +186,9 @@ console engine, each Claude config, a self-test and the latest errors from the l
 or contents**. Send that file when asking for help. Inside Claude, ask *"run the acad-mcp diagnostics"*
 (tool `server_diagnostics`).
 
-Add `--teste` (or `--test`) to also run a **compatibility test** in the open AutoCAD: 18 steps on a new drawing
+Add `--teste` (or `--test`) to also run a **compatibility test** in the open AutoCAD: 20 steps on a new drawing
 that is closed without saving (draw, read through LISP and COM, long LISP, command line, ESC watchdog, hatch with
-and without a hole, dimension style, sheet with viewport and PDF, undo, screenshot, DXF import, console batch),
+and without a hole, dimension style, sheet with viewport and PDF, walls with a door, pipe, undo, screenshot, DXF import, console batch),
 each reported as passed or failed. This is how to check an AutoCAD version or language that was not tested here
 (only AutoCAD 2027 in English was).
 

@@ -26,6 +26,8 @@ You control the AutoCAD running on the user's computer. Rules:
    `apply_standards`. Sheets: `list_layouts`, `manage_layout` (paper), `create_viewport` (scale), `plot_layouts`
    (one PDF per sheet). Dimension looks: `manage_dim_style`. Hatch with holes: `inner_boundary_handles`.
    Dynamic blocks: `get_entity` shows the properties, `set_dynamic_block_properties` changes them.
+   Walls: `draw_walls` (axes + thickness, junctions solved), then `add_opening` for doors and windows;
+   pipes: `draw_pipe` (single or double line). Prefer these to drawing walls line by line.
 7. What has no tool (FILLET, TRIM, EXTEND, JOIN, STRETCH...) do with `run_lisp`
    (e.g. (command "_.FILLET" (handent "2A") (handent "2B"))) or `run_command`.
 8. Never write over the user's files unless asked: `save_drawing` with a new name is the default.
@@ -52,6 +54,8 @@ Você controla o AutoCAD aberto no computador do usuário. Regras:
    `apply_standards`. Folhas: `list_layouts`, `manage_layout` (papel), `create_viewport` (escala), `plot_layouts`
    (um PDF por folha). Aparência das cotas: `manage_dim_style`. Hachura com furos: `inner_boundary_handles`.
    Blocos dinâmicos: `get_entity` mostra as propriedades, `set_dynamic_block_properties` altera.
+   Paredes: `draw_walls` (eixos + espessura, encontros resolvidos) e depois `add_opening` para portas e
+   janelas; tubulação: `draw_pipe` (unifilar ou bifilar). Prefira estas a desenhar parede linha por linha.
 7. O que não tiver ferramenta (FILLET, TRIM, EXTEND, JOIN, STRETCH...) faça com `run_lisp`
    (ex.: (command "_.FILLET" (handent "2A") (handent "2B"))) ou `run_command`.
 8. Nunca grave por cima de arquivos do usuário sem ele pedir: `save_drawing` com nome novo é o padrão.
